@@ -384,6 +384,18 @@ public final class GeoCellUtils {
         return true;
     }
 
+    public static List<String> childrenContaining(Geometry g, String parent) {        
+        List<String> children       = childrenFor(parent);
+        List<String> returnChildren = new ArrayList<String>();        
+        for (String child : children) {
+            Polygon cellBox = computeBox(child);
+            if (cellBox.intersects(g)) {
+                returnChildren.add(child);
+            }
+        }
+        return returnChildren;
+    }
+
 
     /**
      * List all possible children for the given geo cell.
@@ -422,6 +434,5 @@ public final class GeoCellUtils {
         int numRows = (int)((bboxNE.getEnvelopeInternal().getMaxY() - bboxSW.getEnvelopeInternal().getMinY()) / cellLatSpan);
 
         return numCols * numRows;
-    }
-    
+    }    
 }

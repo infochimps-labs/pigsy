@@ -1,6 +1,7 @@
 package com.infochimps.hadoop.pig.geo;
 
 import java.io.IOException;
+import java.util.List;
 
 import org.apache.pig.EvalFunc;
 import org.apache.pig.data.Tuple;
@@ -14,6 +15,7 @@ import org.mapfish.geo.MfGeoJSONReader;
 import org.mapfish.geo.MfGeometry;
 import org.mapfish.geo.MfFeature;
 
+import com.vividsolutions.jts.geom.Polygon;
 import com.vividsolutions.jts.geom.Geometry;
 import com.vividsolutions.jts.geom.Point;
 
@@ -21,25 +23,22 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 /**
- * An Apache Pig user-defined-function (UDF) designed to generate a set of map tiles (geocells) based on input
- * data in the geoJSON format.
+ * All this is going to do is take a geoJSON blob, the geocell that contains it, and search the geocell's children one level.
+ * It will return data like the following:
  * <p>
- * The exec function has the following parameters (wrapped by a Tuple):
- * <ul>
- * <li><b>resolution</b>: An integer resolution ranging from 1 to 13 with 13 being the highest.
- * <li><b>blob</b>: A geoJSON "Feature". See the geoJSON specification for what that acutally means.
- * </ul>
+ * {(geocell_1, geometry_within_1), (geocell_2, geometry_within_2), ..., (geocell_n, geometry_within_n)}
+ * <p>
+ * This way we can perform a massively parallel search of space for all cells for a given tile.
  */
-public class FeatureToGeoCells extends EvalFunc<DataBag> {
+public class SearchGeoCell extends EvalFunc<DataBag> {
 
     private static TupleFactory tupleFactory = TupleFactory.getInstance();
     private static BagFactory   bagFactory   = BagFactory.getInstance();
 
-    // Maximum number of geocells to create for a single polygon
     private static int MAX_CELLS             = 500000;
     private static final String GEOM_POINT   = "Point";
-
-    // Simple factory for creating geoJSON features from json strings
+    private static final String GEOM_COLLEC  = "GeometryCollection";
+    
     private final MfGeoFactory mfFactory = new MfGeoFactory() {
             public MfFeature createFeature(String id, MfGeometry geometry, JSONObject properties) {
                 return new GeoFeature(id, geometry, properties);
@@ -58,19 +57,13 @@ public class FeatureToGeoCells extends EvalFunc<DataBag> {
      * </ul>
      */
     public DataBag exec(Tuple input) throws IOException {
-        if (input == null || input.size() < 2)
+        if (input == null || input.size() < 2 || input.isNull(0) || input.isNull(1))
             return null;
 
         DataBag returnCells = bagFactory.newDefaultBag();
-        Integer resolution  = (Integer)input.get(0);
-        Object jsonObj      = input.get(1);
+        String geocell      = input.get(0).toString();
+        String jsonBlob     = input.get(1).toString();
 
-        // Return an empty bag if no json string is supplied
-        if (jsonObj == null) {
-            return returnCells;
-        }
-        
-        String jsonBlob       = jsonObj.toString();
         try {
             // All the gunk involved with reading in a 
             MfGeo result       = reader.decode(jsonBlob);
@@ -80,17 +73,33 @@ public class FeatureToGeoCells extends EvalFunc<DataBag> {
 
             // If the object is a simple point then act on it immediately and without further adeau
             if (jts.getGeometryType().equals(GEOM_POINT)) {
-                Point point   = (Point) jts;
-                Tuple geocell = tupleFactory.newTuple(GeoCellUtils.compute(point.getX(), point.getY(), resolution));
-                returnCells.add(geocell);
+                Point point      = (Point) jts;
+                Tuple newGeoCell = tupleFactory.newTuple(2);
+                newGeoCell.set(0, GeoCellUtils.compute(point.getX(), point.getY(), geocell.length() + 1));
+                newGeoCell.set(1, jsonBlob);                        
+                returnCells.add(newGeoCell);
             } else { // Otherwise check that it's not going to produce too many cells
-                int approxCellCount = GeoCellUtils.cellCount(jts.getEnvelopeInternal(), resolution);
+                int approxCellCount = GeoCellUtils.cellCount(jts.getEnvelopeInternal(), geocell.length() + 1);
                 if ( approxCellCount > MAX_CELLS) {
                     System.out.println("Too many cells! ["+approxCellCount+"]");
-                    return returnCells;
+                    return null;
                 }
-                // Finally, compute all the cells for the polygon
-                returnCells = GeoCellUtils.allCellsFor(jts, resolution);
+
+                List<String> childCells = GeoCellUtils.childrenContaining(jts, geocell);
+                for (String child : childCells) {
+                    Polygon cellBox = GeoCellUtils.computeBox(child);
+                    Geometry cut    = cellBox.intersection(jts);
+                    
+                    cut = (cut.getGeometryType().equals(GEOM_COLLEC) ? cut.getEnvelope() : cut );
+                    
+                    MfGeometry snippedGeom    = new MfGeometry(cut);
+                    GeoFeature snippedFeature = new GeoFeature(feature.getFeatureId(), snippedGeom, feature.getProperties());
+
+                    Tuple newGeoCell = tupleFactory.newTuple(2);
+                    newGeoCell.set(0, child);
+                    newGeoCell.set(1, snippedFeature.serialize());
+                    returnCells.add(newGeoCell);
+                }
             }
         } catch (JSONException e) {}
         return returnCells;
