@@ -1,0 +1,11 @@
+h1. Infochimps Piggybank
+
+A collection of UDFs for Apache Pig.
+
+h2. Build
+
+<pre><code>
+mvn package
+</code></pre>
+
+will build the infochimps-piggybank.jar.
