@@ -7,6 +7,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.NavigableMap;
+import java.util.Properties;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -48,6 +49,8 @@ import org.apache.pig.data.TupleFactory;
 import org.apache.pig.data.BagFactory;
 import org.apache.pig.impl.logicalLayer.FrontendException;
 import org.apache.pig.impl.util.Utils;
+import org.apache.pig.impl.util.ObjectSerializer;
+import org.apache.pig.impl.util.UDFContext;
 
 
 import com.google.common.collect.Lists;
@@ -75,14 +78,17 @@ public class DynamicFamilyStorage extends StoreFunc implements StoreFuncInterfac
     
     private List<byte[]> columnList_ = Lists.newArrayList();
     private HTable m_table;
+    private TableOutputFormat outputFormat = null;
 
     private Configuration m_conf;
     private RecordReader reader;
     private RecordWriter writer;
     private Scan scan;
-
+    private String contextSignature = null;
+    
     private LoadCaster caster_;
     private ResourceSchema schema_;
+    private boolean initialized = false;
 
     public DynamicFamilyStorage() throws IOException {
         m_conf  = HBaseConfiguration.create();
@@ -91,7 +97,11 @@ public class DynamicFamilyStorage extends StoreFunc implements StoreFuncInterfac
 
     @Override
     public OutputFormat getOutputFormat() throws IOException {
-        TableOutputFormat outputFormat = new TableOutputFormat();
+        if (outputFormat == null) {
+            this.outputFormat = new TableOutputFormat();
+            HBaseConfiguration.addHbaseResources(m_conf);
+            this.outputFormat.setConf(m_conf);            
+        }
         return outputFormat;
     }
 
@@ -112,7 +122,21 @@ public class DynamicFamilyStorage extends StoreFunc implements StoreFuncInterfac
     @SuppressWarnings("unchecked")
     @Override
     public void putNext(Tuple t) throws IOException {
-        byte[] rowKey = objToBytes(t.get(0), DataType.findType(t.get(0))); // Convert row key to byte[]
+
+        if (!initialized) {
+            Properties p = UDFContext.getUDFContext().getUDFProperties(this.getClass(),
+                                                                       new String[] {contextSignature});
+            String serializedSchema = p.getProperty(contextSignature + "_schema");
+            if (serializedSchema!= null) {
+                schema_ = (ResourceSchema) ObjectSerializer.deserialize(serializedSchema);
+            }
+            initialized = true;
+        }
+        
+        ResourceFieldSchema[] fieldSchemas = (schema_ == null) ? null : schema_.getFields();
+
+        // Convert the row key to bytes properly
+        byte[] rowKey = objToBytes(t.get(0), (fieldSchemas == null) ? DataType.findType(t.get(0)) : fieldSchemas[0].getType());
         
         if(rowKey != null && t.size() >= 4) {
             long ts = System.currentTimeMillis();
@@ -126,9 +150,11 @@ public class DynamicFamilyStorage extends StoreFunc implements StoreFuncInterfac
                 try {
                     ts = Long.parseLong(t.get(4).toString());
                 } catch (Exception e) {
+                    ts = System.currentTimeMillis();
                 }
             }
-            if (colVal!=null) {
+            if ((family != null) && (colName != null) && (colVal != null)) {
+                LOG.info("family:["+Bytes.toString(family)+"], colname:["+Bytes.toString(colName)+"], timestamp:["+ts+"], colval:["+Bytes.toString(colVal)+"]");
                 put.add(family, colName, ts, colVal);
             }
             try {
@@ -171,7 +197,9 @@ public class DynamicFamilyStorage extends StoreFunc implements StoreFuncInterfac
     }
 
     @Override
-    public void setStoreFuncUDFContextSignature(String signature) { }
+    public void setStoreFuncUDFContextSignature(String signature) {
+        this.contextSignature = signature;
+    }
 
     @Override
     public void setStoreLocation(String location, Job job) throws IOException {
@@ -180,8 +208,13 @@ public class DynamicFamilyStorage extends StoreFunc implements StoreFuncInterfac
         }else{
             job.getConfiguration().set(TableOutputFormat.OUTPUT_TABLE, location);
         }
+        Properties props = UDFContext.getUDFContext().getUDFProperties(getClass(), new String[]{contextSignature});
+        if (!props.containsKey(contextSignature + "_schema")) {
+            props.setProperty(contextSignature + "_schema",  ObjectSerializer.serialize(schema_));
+        }
+        m_conf = HBaseConfiguration.addHbaseResources(job.getConfiguration());
     }
-
+    
     @Override
     public void cleanupOnFailure(String location, Job job) throws IOException {
 

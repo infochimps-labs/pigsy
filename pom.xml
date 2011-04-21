@@ -31,7 +31,7 @@
     <dependency>
       <groupId>org.apache.hbase</groupId>
       <artifactId>hbase</artifactId>
-      <version>0.90.0</version>
+      <version>0.90.1-cdh3u0</version>
     </dependency>
 
     <dependency>
@@ -87,6 +87,11 @@
     <repository>
       <id>org.mapfish</id>
       <url>http://dev.mapfish.org/maven/repository</url>
+    </repository>
+
+    <repository>
+      <id>com.cloudera</id>
+      <url>https://repository.cloudera.com/content/repositories/releases</url>
     </repository>
   </repositories>
 
