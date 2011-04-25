@@ -15,7 +15,8 @@
  * the License.
  */
 
-package org.apache.pig.backend.hadoop.hbase;
+package com.infochimps.hadoop.pig.hbase;
+//package org.apache.pig.backend.hadoop.hbase;
 
 import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
@@ -81,11 +82,14 @@ import org.apache.pig.data.DataByteArray;
 import org.apache.pig.data.DataType;
 import org.apache.pig.data.Tuple;
 import org.apache.pig.data.TupleFactory;
+import org.apache.pig.data.BagFactory;
 import org.apache.pig.impl.PigContext;
 import org.apache.pig.impl.logicalLayer.FrontendException;
 import org.apache.pig.impl.util.Utils;
 import org.apache.pig.impl.util.ObjectSerializer;
 import org.apache.pig.impl.util.UDFContext;
+
+import org.apache.pig.backend.hadoop.hbase.HBaseBinaryConverter;
 
 import com.google.common.collect.Lists;
 
@@ -135,6 +139,7 @@ public class StaticFamilyStorage extends LoadFunc implements StoreFuncInterface,
     private Configuration m_conf;
     private RecordReader reader;
     private RecordWriter writer;
+    private TableOutputFormat outputFormat = null;    
     private Scan scan;
     private String contextSignature = null;
 
@@ -362,8 +367,8 @@ public class StaticFamilyStorage extends LoadFunc implements StoreFuncInterface,
                         // It's a column family so we need to iterate and set all
                         // values found
                         NavigableMap<byte[], byte[]> cfResults = resultsMap.get(columnInfo.getColumnFamily());
-                        Map<String, DataByteArray> cfMap = new HashMap<String, DataByteArray>();
-
+                        DataBag bagged_family = BagFactory.getInstance().newDefaultBag();
+                        
                         if (cfResults != null) {
                             for (byte[] quantifier : cfResults.keySet()) {
                                 // We need to check against the prefix filter to
@@ -371,17 +376,19 @@ public class StaticFamilyStorage extends LoadFunc implements StoreFuncInterface,
                                 // just rely on the server-side filter, since a
                                 // user could specify multiple CF filters for the
                                 // same CF.
-                                if (columnInfo.getColumnPrefix() == null ||
-                                        columnInfo.hasPrefixMatch(quantifier)) {
+                                if (columnInfo.getColumnPrefix() == null || columnInfo.hasPrefixMatch(quantifier)) {
 
-                                    byte[] cell = cfResults.get(quantifier);
-                                    DataByteArray value =
-                                            cell == null ? null : new DataByteArray(cell);
-                                    cfMap.put(Bytes.toString(quantifier), value);
+                                    byte[] cell         = cfResults.get(quantifier);
+                                    DataByteArray value = cell == null ? null : new DataByteArray(cell);
+
+                                    Tuple entry = TupleFactory.getInstance().newTuple(2);
+                                    entry.set(0, Bytes.toString(quantifier));
+                                    entry.set(1, value);
+                                    bagged_family.add(entry);
                                 }
                             }
                         }
-                        tuple.set(currentIndex, cfMap);
+                        tuple.set(currentIndex, bagged_family);
                     } else {
                         // It's a column so set the value
                         byte[] cell=result.getValue(columnInfo.getColumnFamily(),
@@ -509,10 +516,12 @@ public class StaticFamilyStorage extends LoadFunc implements StoreFuncInterface,
     
     @Override
     public OutputFormat getOutputFormat() throws IOException {
-        TableOutputFormat outputFormat = new TableOutputFormat();
-        HBaseConfiguration.addHbaseResources(m_conf);
-        outputFormat.setConf(m_conf);
-        return outputFormat;
+        if (outputFormat == null) {
+            this.outputFormat = new TableOutputFormat();
+            HBaseConfiguration.addHbaseResources(m_conf);
+            this.outputFormat.setConf(m_conf);            
+        }
+        return outputFormat;        
     }
 
     @Override
