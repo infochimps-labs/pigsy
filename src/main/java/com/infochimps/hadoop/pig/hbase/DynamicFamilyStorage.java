@@ -122,7 +122,8 @@ public class DynamicFamilyStorage extends StoreFunc implements StoreFuncInterfac
     @SuppressWarnings("unchecked")
     @Override
     public void putNext(Tuple t) throws IOException {
-
+        if (t.isNull(0) || t.isNull(1) || t.isNull(2) || t.isNull(3)) return;
+            
         if (!initialized) {
             Properties p = UDFContext.getUDFContext().getUDFProperties(this.getClass(),
                                                                        new String[] {contextSignature});
@@ -154,7 +155,6 @@ public class DynamicFamilyStorage extends StoreFunc implements StoreFuncInterfac
                 }
             }
             if ((family != null) && (colName != null) && (colVal != null)) {
-                LOG.info("family:["+Bytes.toString(family)+"], colname:["+Bytes.toString(colName)+"], timestamp:["+ts+"], colval:["+Bytes.toString(colVal)+"]");
                 put.add(family, colName, ts, colVal);
             }
             try {

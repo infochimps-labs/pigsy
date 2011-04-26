@@ -28,7 +28,7 @@ public class GeoFeature extends MfFeature {
         MfGeoJSONWriter builder = new MfGeoJSONWriter(stringer);
         try {
             builder.encodeFeature(this);
-        } catch (JSONException e) {
+        } catch (Exception e) {
             return null;
         }
         return stringer.toString();
