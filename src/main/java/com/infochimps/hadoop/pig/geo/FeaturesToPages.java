@@ -147,7 +147,7 @@ public class FeaturesToPages extends EvalFunc<DataBag> {
                 result = ((Float)field1).compareTo((Float)field2);
             } else if (field1 instanceof Float) {
                 result = ((Double)field1).compareTo((Double)field2);
-            } else {
+            } else if (field1 instanceof String) {
                 result = ((String)field1).compareTo((String)field2);
             }
             return result;
