@@ -29,6 +29,7 @@ public class GeoFeature extends MfFeature {
         try {
             builder.encodeFeature(this);
         } catch (Exception e) {
+            e.printStackTrace();
             return null;
         }
         return stringer.toString();
