@@ -16,7 +16,6 @@
  */
 
 package com.infochimps.hadoop.pig.hbase;
-//package org.apache.pig.backend.hadoop.hbase;
 
 import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
@@ -75,7 +74,6 @@ import org.apache.pig.ResourceSchema;
 import org.apache.pig.ResourceSchema.ResourceFieldSchema;
 import org.apache.pig.StoreFuncInterface;
 import org.apache.pig.backend.hadoop.executionengine.mapReduceLayer.PigSplit;
-import org.apache.pig.backend.hadoop.hbase.HBaseTableInputFormat.HBaseTableIFBuilder;
 import org.apache.pig.builtin.Utf8StorageConverter;
 import org.apache.pig.data.DataBag;
 import org.apache.pig.data.DataByteArray;
@@ -91,6 +89,7 @@ import org.apache.pig.impl.util.UDFContext;
 
 import org.apache.pig.backend.hadoop.hbase.HBaseBinaryConverter;
 
+import com.infochimps.hadoop.pig.hbase.HBaseTableInputFormat.HBaseTableIFBuilder;
 import com.google.common.collect.Lists;
 
 /**
@@ -148,6 +147,7 @@ public class StaticFamilyStorage extends LoadFunc implements StoreFuncInterface,
     private final static CommandLineParser parser_ = new GnuParser();
     private boolean loadRowKey_;
     private final long limit_;
+    private final int maxTableSplits_;
     private final int tsField_;
     private final int caching_;
 
@@ -171,6 +171,7 @@ public class StaticFamilyStorage extends LoadFunc implements StoreFuncInterface,
         validOptions_.addOption("lte", true, "Records must be less than or equal to this value");
         validOptions_.addOption("caching", true, "Number of rows scanners should cache");
         validOptions_.addOption("limit", true, "Per-region limit");
+        validOptions_.addOption("maxTableSplits", true, "Input splits (one per region) are combined until the total number of splits is less than maxTableSplits. A good heuristic is num_hadoop_machines*min((max_zookeeper_connections/max_map_tasks_per_machine),(max_zookeeper_connections/max_reduce_tasks_per_machine))");
         validOptions_.addOption("timestamp_field", true, "Zero based index of the field to use as the timestamp");
         validOptions_.addOption("caster", true, "Caster to use for converting values. A class name, " +
                 "HBaseBinaryConverter, or Utf8StorageConverter. For storage, casters must implement LoadStoreCaster.");
@@ -221,7 +222,7 @@ public class StaticFamilyStorage extends LoadFunc implements StoreFuncInterface,
             configuredOptions_ = parser_.parse(validOptions_, optsArr);
         } catch (ParseException e) {
             HelpFormatter formatter = new HelpFormatter();
-            formatter.printHelp( "[-loadKey] [-gt] [-gte] [-lt] [-lte] [-columnPrefix] [-caching] [-caster] [-limit]", validOptions_ );
+            formatter.printHelp( "[-loadKey] [-gt] [-gte] [-lt] [-lte] [-columnPrefix] [-caching] [-caster] [-limit] [-timestamp_field] [-maxTableSplits]", validOptions_ );
             throw e;
         }
 
@@ -249,9 +250,10 @@ public class StaticFamilyStorage extends LoadFunc implements StoreFuncInterface,
             }
         }
 
-        caching_ = Integer.valueOf(configuredOptions_.getOptionValue("caching", "100"));
+        caching_ = Integer.valueOf(configuredOptions_.getOptionValue("caching", "1000"));
         limit_   = Long.valueOf(configuredOptions_.getOptionValue("limit", "-1"));
-        tsField_ = Integer.valueOf(configuredOptions_.getOptionValue("timestamp_field", "-1"));        
+        tsField_ = Integer.valueOf(configuredOptions_.getOptionValue("timestamp_field", "-1"));
+        maxTableSplits_ = Integer.valueOf(configuredOptions_.getOptionValue("maxTableSplits", "100"));
         initScan();	    
     }
 
@@ -416,13 +418,14 @@ public class StaticFamilyStorage extends LoadFunc implements StoreFuncInterface,
     @Override
     public InputFormat getInputFormat() {      
         TableInputFormat inputFormat = new HBaseTableIFBuilder()
-        .withLimit(limit_)
-        .withGt(gt_)
-        .withGte(gte_)
-        .withLt(lt_)
-        .withLte(lte_)
-        .withConf(m_conf)
-        .build();
+            .withLimit(limit_)
+            .withMaxSplits(maxTableSplits_)
+            .withGt(gt_)
+            .withGte(gte_)
+            .withLt(lt_)
+            .withLte(lte_)
+            .withConf(m_conf)
+            .build();
         return inputFormat;
     }
 
@@ -578,10 +581,12 @@ public class StaticFamilyStorage extends LoadFunc implements StoreFuncInterface,
                 LOG.debug("putNext - tuple: "+i+", value="+t.get(i)+", cf:column="+columnInfo);
             }
             
-            if (!columnInfo.isColumnMap() && (columnInfo.getColumnFamily() != null) && (columnInfo.getColumnName() != null) && (!t.isNull(i))) {
-                put.add(columnInfo.getColumnFamily(), columnInfo.getColumnName(),
-                        ts, objToBytes(t.get(i), (fieldSchemas == null) ?
-                        DataType.findType(t.get(i)) : fieldSchemas[i].getType()));
+            if (!columnInfo.isColumnMap()) {
+                if ((columnInfo.getColumnFamily() != null) && (columnInfo.getColumnName() != null) && !t.isNull(i)) {
+                    put.add(columnInfo.getColumnFamily(), columnInfo.getColumnName(),
+                            ts, objToBytes(t.get(i), (fieldSchemas == null) ?
+                                           DataType.findType(t.get(i)) : fieldSchemas[i].getType()));
+                }
             } else {
                 Map<String, Object> cfMap = (Map<String, Object>) t.get(i);
                 for (String colName : cfMap.keySet()) {

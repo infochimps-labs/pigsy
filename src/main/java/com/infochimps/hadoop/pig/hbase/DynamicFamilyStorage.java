@@ -90,9 +90,16 @@ public class DynamicFamilyStorage extends StoreFunc implements StoreFuncInterfac
     private ResourceSchema schema_;
     private boolean initialized = false;
 
+    private final int maxTableSplits_;
+    
     public DynamicFamilyStorage() throws IOException {
+        this(100);
+    }
+
+    public DynamicFamilyStorage(int maxTableSplits) throws IOException {
         m_conf  = HBaseConfiguration.create();
         caster_ = new Utf8StorageConverter();
+        maxTableSplits_ = maxTableSplits;
     }
 
     @Override
