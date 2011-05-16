@@ -28,6 +28,7 @@ import java.util.Map;
 import java.util.NavigableMap;
 import java.util.HashMap;
 import java.util.Properties;
+import java.net.URL;
 
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.CommandLineParser;
@@ -38,7 +39,10 @@ import org.apache.commons.cli.ParseException;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.fs.FileSystem;
+
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.filecache.DistributedCache;
 import org.apache.hadoop.hbase.HBaseConfiguration;
 import org.apache.hadoop.hbase.client.HTable;
 import org.apache.hadoop.hbase.client.Put;
@@ -54,7 +58,6 @@ import org.apache.hadoop.hbase.filter.Filter;
 import org.apache.hadoop.hbase.io.ImmutableBytesWritable;
 import org.apache.hadoop.hbase.mapreduce.TableInputFormat;
 import org.apache.hadoop.hbase.mapreduce.TableMapReduceUtil;
-import org.apache.hadoop.hbase.mapreduce.TableOutputFormat;
 import org.apache.hadoop.hbase.mapreduce.TableSplit;
 import org.apache.hadoop.hbase.util.Base64;
 import org.apache.hadoop.hbase.util.Bytes;
@@ -125,7 +128,7 @@ import com.google.common.collect.Lists;
  */
 public class StaticFamilyStorage extends LoadFunc implements StoreFuncInterface, LoadPushDown, OrderedLoadFunc {
     
-    private static final Log LOG = LogFactory.getLog(HBaseStorage.class);
+    private static final Log LOG = LogFactory.getLog(StaticFamilyStorage.class);
 
     private final static String STRING_CASTER = "UTF8StorageConverter";
     private final static String BYTE_CASTER = "HBaseBinaryConverter";
@@ -138,19 +141,21 @@ public class StaticFamilyStorage extends LoadFunc implements StoreFuncInterface,
     private Configuration m_conf;
     private RecordReader reader;
     private RecordWriter writer;
-    private TableOutputFormat outputFormat = null;    
+    private HBaseTableOutputFormat outputFormat = null;    
     private Scan scan;
     private String contextSignature = null;
 
     private final CommandLine configuredOptions_;
     private final static Options validOptions_ = new Options();
     private final static CommandLineParser parser_ = new GnuParser();
+    
     private boolean loadRowKey_;
     private final long limit_;
     private final int maxTableSplits_;
     private final int tsField_;
     private final int caching_;
-
+    private final String hbaseConfig_;
+    
     protected transient byte[] gt_;
     protected transient byte[] gte_;
     protected transient byte[] lt_;
@@ -162,6 +167,10 @@ public class StaticFamilyStorage extends LoadFunc implements StoreFuncInterface,
     private RequiredFieldList requiredFieldList;
     private boolean initialized = false;
 
+    private static final String ZOOKEEPER_CLIENT_PORT = "hbase.zookeeper.property.clientPort";
+    private static final String ZOOKEEPER_DEFAULT_CLIENT_PORT = "2181";
+    private static final String LOCAL_SCHEME = "file://";
+    
     private static void populateValidOptions() { 
         validOptions_.addOption("loadKey", false, "Load Key");
         validOptions_.addOption("gt", true, "Records must be greater than this value " +
@@ -173,6 +182,7 @@ public class StaticFamilyStorage extends LoadFunc implements StoreFuncInterface,
         validOptions_.addOption("limit", true, "Per-region limit");
         validOptions_.addOption("maxTableSplits", true, "Input splits (one per region) are combined until the total number of splits is less than maxTableSplits. A good heuristic is num_hadoop_machines*min((max_zookeeper_connections/max_map_tasks_per_machine),(max_zookeeper_connections/max_reduce_tasks_per_machine))");
         validOptions_.addOption("timestamp_field", true, "Zero based index of the field to use as the timestamp");
+        validOptions_.addOption("config", true, "Full path to local hbase-site.xml");
         validOptions_.addOption("caster", true, "Caster to use for converting values. A class name, " +
                 "HBaseBinaryConverter, or Utf8StorageConverter. For storage, casters must implement LoadStoreCaster.");
     }
@@ -222,7 +232,7 @@ public class StaticFamilyStorage extends LoadFunc implements StoreFuncInterface,
             configuredOptions_ = parser_.parse(validOptions_, optsArr);
         } catch (ParseException e) {
             HelpFormatter formatter = new HelpFormatter();
-            formatter.printHelp( "[-loadKey] [-gt] [-gte] [-lt] [-lte] [-columnPrefix] [-caching] [-caster] [-limit] [-timestamp_field] [-maxTableSplits]", validOptions_ );
+            formatter.printHelp( "[-config] [-loadKey] [-gt] [-gte] [-lt] [-lte] [-columnPrefix] [-caching] [-caster] [-limit] [-timestamp_field] [-maxTableSplits]", validOptions_ );
             throw e;
         }
 
@@ -232,6 +242,7 @@ public class StaticFamilyStorage extends LoadFunc implements StoreFuncInterface,
         }
 
         m_conf = HBaseConfiguration.create();
+
         String defaultCaster = m_conf.get(CASTER_PROPERTY, STRING_CASTER);
         String casterOption = configuredOptions_.getOptionValue("caster", defaultCaster);
         if (STRING_CASTER.equalsIgnoreCase(casterOption)) {
@@ -242,7 +253,7 @@ public class StaticFamilyStorage extends LoadFunc implements StoreFuncInterface,
             try {
               caster_ = (LoadCaster) PigContext.instantiateFuncFromSpec(casterOption);
             } catch (ClassCastException e) {
-                LOG.error("Congifured caster does not implement LoadCaster interface.");
+                LOG.error("Configured caster does not implement LoadCaster interface.");
                 throw new IOException(e);
             } catch (RuntimeException e) {
                 LOG.error("Configured caster class not found.", e);
@@ -250,6 +261,7 @@ public class StaticFamilyStorage extends LoadFunc implements StoreFuncInterface,
             }
         }
 
+        hbaseConfig_ = configuredOptions_.getOptionValue("config", "/etc/hbase/conf/hbase-site.xml");
         caching_ = Integer.valueOf(configuredOptions_.getOptionValue("caching", "1000"));
         limit_   = Long.valueOf(configuredOptions_.getOptionValue("limit", "-1"));
         tsField_ = Integer.valueOf(configuredOptions_.getOptionValue("timestamp_field", "-1"));
@@ -441,11 +453,11 @@ public class StaticFamilyStorage extends LoadFunc implements StoreFuncInterface,
 
     @Override
     public void setLocation(String location, Job job) throws IOException {
-        job.getConfiguration().setBoolean("pig.noSplitCombination", true);
         m_conf = job.getConfiguration();
-        HBaseConfiguration.addHbaseResources(m_conf);
 
-        // Make sure the HBase, ZooKeeper, and Guava jars get shipped.
+        m_conf.addResource(new URL(LOCAL_SCHEME+hbaseConfig_));
+        m_conf.setIfUnset(ZOOKEEPER_CLIENT_PORT, ZOOKEEPER_DEFAULT_CLIENT_PORT);
+
         TableMapReduceUtil.addDependencyJars(job.getConfiguration(), 
             org.apache.hadoop.hbase.client.HTable.class,
             com.google.common.collect.Lists.class,
@@ -520,7 +532,7 @@ public class StaticFamilyStorage extends LoadFunc implements StoreFuncInterface,
     @Override
     public OutputFormat getOutputFormat() throws IOException {
         if (outputFormat == null) {
-            this.outputFormat = new TableOutputFormat();
+            this.outputFormat = new HBaseTableOutputFormat();
             HBaseConfiguration.addHbaseResources(m_conf);
             this.outputFormat.setConf(m_conf);            
         }
@@ -650,14 +662,14 @@ public class StaticFamilyStorage extends LoadFunc implements StoreFuncInterface,
     @Override
     public void setStoreLocation(String location, Job job) throws IOException {
         if (location.startsWith("hbase://")){
-            job.getConfiguration().set(TableOutputFormat.OUTPUT_TABLE, location.substring(8));
+            job.getConfiguration().set(HBaseTableOutputFormat.OUTPUT_TABLE, location.substring(8));
         }else{
-            job.getConfiguration().set(TableOutputFormat.OUTPUT_TABLE, location);
+            job.getConfiguration().set(HBaseTableOutputFormat.OUTPUT_TABLE, location);
         }
         Properties props = UDFContext.getUDFContext().getUDFProperties(getClass(), new String[]{contextSignature});
         if (!props.containsKey(contextSignature + "_schema")) {
             props.setProperty(contextSignature + "_schema",  ObjectSerializer.serialize(schema_));
-    }
+        }
         m_conf = HBaseConfiguration.addHbaseResources(job.getConfiguration());
     }
 

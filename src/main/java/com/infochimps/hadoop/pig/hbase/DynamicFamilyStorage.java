@@ -23,7 +23,6 @@ import org.apache.hadoop.hbase.filter.FilterList;
 import org.apache.hadoop.hbase.filter.RowFilter;
 import org.apache.hadoop.hbase.io.ImmutableBytesWritable;
 import org.apache.hadoop.hbase.mapreduce.TableInputFormat;
-import org.apache.hadoop.hbase.mapreduce.TableOutputFormat;
 import org.apache.hadoop.hbase.util.Base64;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.mapreduce.InputFormat;
@@ -78,7 +77,7 @@ public class DynamicFamilyStorage extends StoreFunc implements StoreFuncInterfac
     
     private List<byte[]> columnList_ = Lists.newArrayList();
     private HTable m_table;
-    private TableOutputFormat outputFormat = null;
+    private HBaseTableOutputFormat outputFormat = null;
 
     private Configuration m_conf;
     private RecordReader reader;
@@ -105,7 +104,7 @@ public class DynamicFamilyStorage extends StoreFunc implements StoreFuncInterfac
     @Override
     public OutputFormat getOutputFormat() throws IOException {
         if (outputFormat == null) {
-            this.outputFormat = new TableOutputFormat();
+            this.outputFormat = new HBaseTableOutputFormat();
             HBaseConfiguration.addHbaseResources(m_conf);
             this.outputFormat.setConf(m_conf);            
         }
@@ -211,9 +210,9 @@ public class DynamicFamilyStorage extends StoreFunc implements StoreFuncInterfac
     @Override
     public void setStoreLocation(String location, Job job) throws IOException {
         if (location.startsWith("hbase://")){
-            job.getConfiguration().set(TableOutputFormat.OUTPUT_TABLE, location.substring(8));
+            job.getConfiguration().set(HBaseTableOutputFormat.OUTPUT_TABLE, location.substring(8));
         }else{
-            job.getConfiguration().set(TableOutputFormat.OUTPUT_TABLE, location);
+            job.getConfiguration().set(HBaseTableOutputFormat.OUTPUT_TABLE, location);
         }
         Properties props = UDFContext.getUDFContext().getUDFProperties(getClass(), new String[]{contextSignature});
         if (!props.containsKey(contextSignature + "_schema")) {
