@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.NavigableMap;
 import java.util.Properties;
+import java.net.URL;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -88,17 +89,19 @@ public class DynamicFamilyStorage extends StoreFunc implements StoreFuncInterfac
     private LoadCaster caster_;
     private ResourceSchema schema_;
     private boolean initialized = false;
+    private final String hbaseConfig_;
 
-    private final int maxTableSplits_;
+    private static final String DEFAULT_CONFIG = "/etc/hbase/conf/hbase-site.xml";
+    private static final String LOCAL_SCHEME = "file://";
     
     public DynamicFamilyStorage() throws IOException {
-        this(100);
+        this(DEFAULT_CONFIG);
     }
 
-    public DynamicFamilyStorage(int maxTableSplits) throws IOException {
+    public DynamicFamilyStorage(String hbaseConfig) throws IOException {
         m_conf  = HBaseConfiguration.create();
         caster_ = new Utf8StorageConverter();
-        maxTableSplits_ = maxTableSplits;
+        hbaseConfig_ = hbaseConfig;
     }
 
     @Override
@@ -106,6 +109,7 @@ public class DynamicFamilyStorage extends StoreFunc implements StoreFuncInterfac
         if (outputFormat == null) {
             this.outputFormat = new HBaseTableOutputFormat();
             HBaseConfiguration.addHbaseResources(m_conf);
+            m_conf.addResource(new URL(LOCAL_SCHEME+hbaseConfig_));
             this.outputFormat.setConf(m_conf);            
         }
         return outputFormat;
@@ -128,7 +132,7 @@ public class DynamicFamilyStorage extends StoreFunc implements StoreFuncInterfac
     @SuppressWarnings("unchecked")
     @Override
     public void putNext(Tuple t) throws IOException {
-        if (t.isNull(0) || t.isNull(1) || t.isNull(2) || t.isNull(3)) return;
+        if (t.size() < 4 || t.isNull(0) || t.isNull(1) || t.isNull(2) || t.isNull(3)) return;
             
         if (!initialized) {
             Properties p = UDFContext.getUDFContext().getUDFProperties(this.getClass(),
