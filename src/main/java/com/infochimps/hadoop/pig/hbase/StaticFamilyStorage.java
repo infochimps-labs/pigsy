@@ -167,8 +167,6 @@ public class StaticFamilyStorage extends LoadFunc implements StoreFuncInterface,
     private RequiredFieldList requiredFieldList;
     private boolean initialized = false;
 
-    private static final String ZOOKEEPER_CLIENT_PORT = "hbase.zookeeper.property.clientPort";
-    private static final String ZOOKEEPER_DEFAULT_CLIENT_PORT = "2181";
     private static final String LOCAL_SCHEME = "file://";
     
     private static void populateValidOptions() { 
@@ -455,8 +453,8 @@ public class StaticFamilyStorage extends LoadFunc implements StoreFuncInterface,
     public void setLocation(String location, Job job) throws IOException {
         m_conf = job.getConfiguration();
 
+        HBaseConfiguration.addHbaseResources(m_conf);
         m_conf.addResource(new URL(LOCAL_SCHEME+hbaseConfig_));
-        m_conf.setIfUnset(ZOOKEEPER_CLIENT_PORT, ZOOKEEPER_DEFAULT_CLIENT_PORT);
 
         TableMapReduceUtil.addDependencyJars(job.getConfiguration(), 
             org.apache.hadoop.hbase.client.HTable.class,
@@ -534,6 +532,7 @@ public class StaticFamilyStorage extends LoadFunc implements StoreFuncInterface,
         if (outputFormat == null) {
             this.outputFormat = new HBaseTableOutputFormat();
             HBaseConfiguration.addHbaseResources(m_conf);
+            m_conf.addResource(new URL(LOCAL_SCHEME+hbaseConfig_));
             this.outputFormat.setConf(m_conf);            
         }
         return outputFormat;        
