@@ -17,6 +17,7 @@
 
 package com.infochimps.hadoop.pig.hbase;
 
+import java.io.File;
 import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
@@ -28,7 +29,6 @@ import java.util.Map;
 import java.util.NavigableMap;
 import java.util.HashMap;
 import java.util.Properties;
-import java.net.URL;
 
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.CommandLineParser;
@@ -38,11 +38,9 @@ import org.apache.commons.cli.Options;
 import org.apache.commons.cli.ParseException;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.fs.FileSystem;
 
+import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.filecache.DistributedCache;
 import org.apache.hadoop.hbase.HBaseConfiguration;
 import org.apache.hadoop.hbase.client.HTable;
 import org.apache.hadoop.hbase.client.Put;
@@ -92,6 +90,7 @@ import org.apache.pig.impl.util.UDFContext;
 
 import org.apache.pig.backend.hadoop.hbase.HBaseBinaryConverter;
 
+import com.infochimps.hadoop.util.HadoopUtils;
 import com.infochimps.hadoop.pig.hbase.HBaseTableInputFormat.HBaseTableIFBuilder;
 import com.google.common.collect.Lists;
 
@@ -167,6 +166,8 @@ public class StaticFamilyStorage extends LoadFunc implements StoreFuncInterface,
     private RequiredFieldList requiredFieldList;
     private boolean initialized = false;
 
+    private static final String HAS_BEEN_UPLOADED = "hbase.config.has_been_uploaded";
+    private static final String HBASE_CONFIG_HDFS_PATH = "/tmp/hbase/hbase-site.xml"; // this will be overwritten    
     private static final String LOCAL_SCHEME = "file://";
     
     private static void populateValidOptions() { 
@@ -454,8 +455,15 @@ public class StaticFamilyStorage extends LoadFunc implements StoreFuncInterface,
         m_conf = job.getConfiguration();
 
         HBaseConfiguration.addHbaseResources(m_conf);
-        m_conf.addResource(new URL(LOCAL_SCHEME+hbaseConfig_));
-
+        if (m_conf.get(HAS_BEEN_UPLOADED) == null) {
+            HadoopUtils.uploadLocalFile(new Path(LOCAL_SCHEME+hbaseConfig_), new Path(HBASE_CONFIG_HDFS_PATH), m_conf);
+            HadoopUtils.shipIfNotShipped(new Path(HBASE_CONFIG_HDFS_PATH), m_conf);
+            m_conf.set(HAS_BEEN_UPLOADED, "true");
+        }
+        String taskConfig = HadoopUtils.fetchFromCache((new File(hbaseConfig_)).getName(), m_conf);
+        if (taskConfig == null) taskConfig = hbaseConfig_;
+        m_conf.addResource(new Path(LOCAL_SCHEME+taskConfig));
+                
         TableMapReduceUtil.addDependencyJars(job.getConfiguration(), 
             org.apache.hadoop.hbase.client.HTable.class,
             com.google.common.collect.Lists.class,
@@ -532,7 +540,9 @@ public class StaticFamilyStorage extends LoadFunc implements StoreFuncInterface,
         if (outputFormat == null) {
             this.outputFormat = new HBaseTableOutputFormat();
             HBaseConfiguration.addHbaseResources(m_conf);
-            m_conf.addResource(new URL(LOCAL_SCHEME+hbaseConfig_));
+            String taskConfig = HadoopUtils.fetchFromCache((new File(hbaseConfig_)).getName(), m_conf);
+            if (taskConfig == null) taskConfig = hbaseConfig_;
+            m_conf.addResource(new Path(LOCAL_SCHEME+taskConfig));
             this.outputFormat.setConf(m_conf);            
         }
         return outputFormat;        
@@ -670,6 +680,11 @@ public class StaticFamilyStorage extends LoadFunc implements StoreFuncInterface,
             props.setProperty(contextSignature + "_schema",  ObjectSerializer.serialize(schema_));
         }
         m_conf = HBaseConfiguration.addHbaseResources(job.getConfiguration());
+        if (m_conf.get(HAS_BEEN_UPLOADED) == null) {
+            HadoopUtils.uploadLocalFile(new Path(LOCAL_SCHEME+hbaseConfig_), new Path(HBASE_CONFIG_HDFS_PATH), m_conf);
+            HadoopUtils.shipIfNotShipped(new Path(HBASE_CONFIG_HDFS_PATH), m_conf);
+            m_conf.set(HAS_BEEN_UPLOADED, "true");
+        }
     }
 
     @Override

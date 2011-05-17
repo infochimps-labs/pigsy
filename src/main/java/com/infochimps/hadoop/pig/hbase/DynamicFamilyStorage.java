@@ -1,5 +1,6 @@
 package com.infochimps.hadoop.pig.hbase;
 
+import java.io.File;
 import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
@@ -8,7 +9,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.NavigableMap;
 import java.util.Properties;
-import java.net.URL;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -32,6 +32,7 @@ import org.apache.hadoop.mapreduce.OutputFormat;
 import org.apache.hadoop.mapreduce.RecordReader;
 import org.apache.hadoop.mapreduce.RecordWriter;
 import org.apache.hadoop.conf.Configuration;
+
 import org.apache.pig.LoadCaster;
 import org.apache.pig.StoreFunc;
 import org.apache.pig.LoadPushDown;
@@ -52,7 +53,7 @@ import org.apache.pig.impl.util.Utils;
 import org.apache.pig.impl.util.ObjectSerializer;
 import org.apache.pig.impl.util.UDFContext;
 
-
+import com.infochimps.hadoop.util.HadoopUtils;
 import com.google.common.collect.Lists;
 
 /**
@@ -91,6 +92,8 @@ public class DynamicFamilyStorage extends StoreFunc implements StoreFuncInterfac
     private boolean initialized = false;
     private final String hbaseConfig_;
 
+    private static final String HAS_BEEN_UPLOADED = "hbase.config.has_been_uploaded";
+    private static final String HBASE_CONFIG_HDFS_PATH = "/tmp/hbase/hbase-site.xml"; // this will be overwritten
     private static final String DEFAULT_CONFIG = "/etc/hbase/conf/hbase-site.xml";
     private static final String LOCAL_SCHEME = "file://";
     
@@ -104,12 +107,19 @@ public class DynamicFamilyStorage extends StoreFunc implements StoreFuncInterfac
         hbaseConfig_ = hbaseConfig;
     }
 
+    /**
+       Since a local hadoop configuration object must be created for each hadoop
+       task (that's the only way to talk to Hbase) it is necessary to re-add the
+       hbase configuration each time.
+     */
     @Override
     public OutputFormat getOutputFormat() throws IOException {
         if (outputFormat == null) {
             this.outputFormat = new HBaseTableOutputFormat();
             HBaseConfiguration.addHbaseResources(m_conf);
-            m_conf.addResource(new URL(LOCAL_SCHEME+hbaseConfig_));
+            String taskConfig = HadoopUtils.fetchFromCache((new File(hbaseConfig_)).getName(), m_conf);
+            if (taskConfig == null) taskConfig = hbaseConfig_;
+            m_conf.addResource(new Path(LOCAL_SCHEME+taskConfig));
             this.outputFormat.setConf(m_conf);            
         }
         return outputFormat;
@@ -223,6 +233,11 @@ public class DynamicFamilyStorage extends StoreFunc implements StoreFuncInterfac
             props.setProperty(contextSignature + "_schema",  ObjectSerializer.serialize(schema_));
         }
         m_conf = HBaseConfiguration.addHbaseResources(job.getConfiguration());
+        if (m_conf.get(HAS_BEEN_UPLOADED) == null) {
+            HadoopUtils.uploadLocalFile(new Path(LOCAL_SCHEME+hbaseConfig_), new Path(HBASE_CONFIG_HDFS_PATH), m_conf);
+            HadoopUtils.shipIfNotShipped(new Path(HBASE_CONFIG_HDFS_PATH), m_conf);
+            m_conf.set(HAS_BEEN_UPLOADED, "true");
+        }
     }
     
     @Override
