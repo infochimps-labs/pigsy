@@ -52,12 +52,12 @@ import org.apache.pig.impl.util.Utils;
 
 import com.google.common.collect.Lists;
 
-//
-// This can work. Note: 1. Need to run a total sort over the whole
-// data set. 2. Need to sort the keyvalues before writing. It may be
-// that simply calling ORDER with no other arguments in the pig script
-// itself will be fine.
-//
+/**
+   A pig storage class for writing HFiles (native hbase files) to the hdfs. In order for this
+   work first GROUP the data by row key, project the row key out of the resulting columns bag
+   with a FOREACH..GENERATE, and finally, ORDER the result by the row key (ascending). Since
+   the ordering must be lexigraphic it is <b>very</b> important that the row key be a Pig chararray.
+ */
 public class HFileStorage extends StoreFunc {
 
     protected RecordWriter writer = null;
@@ -84,9 +84,6 @@ public class HFileStorage extends StoreFunc {
         return outputFormat;
     }
 
-    /**
-       Whoa baby.
-     */
     public void setStoreLocation(String location, Job job) throws IOException {
         FileOutputFormat.setOutputPath(job, new Path(location));
     }
@@ -95,6 +92,23 @@ public class HFileStorage extends StoreFunc {
         this.writer = writer;
     }
 
+    /**
+       The function must get a tuple containing the following:
+       <p>
+       <ul>
+       <li><b>row_key</b>: Field 0, the row key to use</li>
+       <li><b>columns</b>: Field 1, a databag containing exactly one tuple. This tuple
+       is assumed to be one 'record' where the positions in the tuple correspond to the
+       positions in the corresponding columnNames (passed into HFileStorage constructor).
+       Warning: Unless 'row_key' has an entry in the columnNames array you must project
+       it out of the columns bag after doing a GROUP BY with Pig.</li>       
+       </ul>
+       <p>
+       Each field in a 'record' is matched with its corresponding field name in the columnNames
+       array. These are written into a TreeMap to maintain a lexigraphical sorting. Once all the
+       fields have been written to the TreeMap it is finally written to HFileOutputFormat.
+
+     */
     @SuppressWarnings("unchecked")
     public void putNext(Tuple t) throws IOException {
         try {
@@ -110,38 +124,22 @@ public class HFileStorage extends StoreFunc {
         }
     }
 
-    // @SuppressWarnings("unchecked")
-    // public void putNext(Tuple t) throws IOException {
-    //     try {
-    //         byte[] rowKey = Bytes.toBytes(t.get(0).toString());
-    //         ImmutableBytesWritable hbaseRowKey = new ImmutableBytesWritable(rowKey);
-    //             
-    //         long ts = System.currentTimeMillis();                
-    //         for (int i = 1; i < t.size(); i++) {
-    //             if (!t.isNull(i)) {
-    //                 byte[] columnName = Bytes.toBytes(columnNames[i-1]);
-    //                 byte[] value = Bytes.toBytes(t.get(i).toString());
-    //                 KeyValue kv = new KeyValue(rowKey, columnFamily, columnName, ts, value);
-    //                 writer.write(hbaseRowKey, kv);                    
-    //             }
-    //         }
-    //     } catch (Exception e) {
-    //         throw new RuntimeException(e);
-    //     }
-    // }
-
+    /**
+       Here we get a databag with one or more tuples in it. Each of these tuples is one
+       record with the same row_key.
+     */
     private TreeSet<KeyValue> sortedKeyValues(byte[] rowKey, DataBag columns) throws IOException {
         TreeSet<KeyValue> map = new TreeSet<KeyValue>(KeyValue.COMPARATOR);
         long ts = System.currentTimeMillis();
-        int idx = 0;
         for (Tuple column : columns) {
-            byte[] columnName = Bytes.toBytes(columnNames[idx]);
-            System.out.println(column.get(0).toString());
-            byte[] value = Bytes.toBytes(column.get(0).toString());
-            System.out.println("Index is ["+idx+"]");
-            KeyValue kv = new KeyValue(rowKey, columnFamily, columnName, ts, value);
-            map.add(kv.clone());
-            idx += 1;
+            for (int i = 0; i < column.size(); i++) {
+                if (!column.isNull(i)) {
+                    byte[] columnName = Bytes.toBytes(columnNames[i]);
+                    byte[] value = Bytes.toBytes(column.get(i).toString()); // FIXME: Should convert from it's type properly
+                    KeyValue kv = new KeyValue(rowKey, columnFamily, columnName, ts, value);
+                    map.add(kv.clone());                    
+                }
+            }
         }
         return map;
     }
