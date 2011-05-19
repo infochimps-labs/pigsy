@@ -89,7 +89,7 @@ public class SearchGeoCell extends EvalFunc<DataBag> {
                 for (String child : childCells) {
                     Polygon cellBox = GeoCellUtils.computeBox(child);
                     Geometry cut    = cellBox.intersection(jts);
-                    
+                   
                     cut = (cut.getGeometryType().equals(GEOM_COLLEC) ? cut.getEnvelope() : cut );
                     
                     MfGeometry snippedGeom    = new MfGeometry(cut);
@@ -102,6 +102,7 @@ public class SearchGeoCell extends EvalFunc<DataBag> {
                 }
             }
         } catch (JSONException e) {}
+        catch (com.vividsolutions.jts.geom.TopologyException e) { System.out.println(e.getMessage()); }
         return returnCells;
     }
 }
