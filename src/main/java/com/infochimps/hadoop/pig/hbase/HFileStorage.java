@@ -33,6 +33,8 @@ import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 import org.apache.hadoop.mapreduce.OutputFormat;
 import org.apache.hadoop.mapreduce.RecordReader;
 import org.apache.hadoop.mapreduce.RecordWriter;
+
+import org.apache.pig.LoadStoreCaster;
 import org.apache.pig.LoadCaster;
 import org.apache.pig.LoadFunc;
 import org.apache.pig.LoadPushDown;
@@ -65,6 +67,7 @@ public class HFileStorage extends StoreFunc {
     private byte[] tableName;
     private byte[] columnFamily;
     private String[] columnNames;
+    private LoadCaster caster;
     
     /**
      * Constructor. Construct a HFile StoreFunc to write data out as HFiles. These
@@ -77,6 +80,7 @@ public class HFileStorage extends StoreFunc {
         this.tableName    = Bytes.toBytes(tN);
         this.columnFamily = Bytes.toBytes(cF);
         this.columnNames  = names.split(",");
+        this.caster = new Utf8StorageConverter();
     }
 
     public OutputFormat getOutputFormat() throws IOException {
@@ -111,16 +115,18 @@ public class HFileStorage extends StoreFunc {
      */
     @SuppressWarnings("unchecked")
     public void putNext(Tuple t) throws IOException {
-        try {
-            byte[] rowKey = Bytes.toBytes(t.get(0).toString());
-            DataBag columns = (DataBag)t.get(1);
-            ImmutableBytesWritable hbaseRowKey = new ImmutableBytesWritable(rowKey);
-            TreeSet<KeyValue> map = sortedKeyValues(rowKey, columns);
-            for (KeyValue kv: map) {
-               writer.write(hbaseRowKey, kv);
+        if (t.size()==2 && !t.isNull(0) && !t.isNull(1)) {
+            try {                
+                byte[] rowKey = Bytes.toBytes(t.get(0).toString());
+                DataBag columns = (DataBag)t.get(1);
+                ImmutableBytesWritable hbaseRowKey = new ImmutableBytesWritable(rowKey);
+                TreeSet<KeyValue> map = sortedKeyValues(rowKey, columns);
+                for (KeyValue kv: map) {
+                    writer.write(hbaseRowKey, kv);
+                }
+            } catch (Exception e) {
+                throw new RuntimeException(e);
             }
-        } catch (Exception e) {
-            throw new RuntimeException(e);
         }
     }
 
@@ -142,5 +148,28 @@ public class HFileStorage extends StoreFunc {
             }
         }
         return map;
+    }
+
+    @SuppressWarnings("unchecked")
+    private byte[] objToBytes(Object o, byte type) throws IOException {
+        LoadStoreCaster bytecaster = (LoadStoreCaster)caster;
+        switch (type) {
+        case DataType.BYTEARRAY: return ((DataByteArray) o).get();
+        case DataType.BAG: return bytecaster.toBytes((DataBag) o);
+        case DataType.CHARARRAY: return bytecaster.toBytes((String) o);
+        case DataType.DOUBLE: return bytecaster.toBytes((Double) o);
+        case DataType.FLOAT: return bytecaster.toBytes((Float) o);
+        case DataType.INTEGER: return bytecaster.toBytes((Integer) o);
+        case DataType.LONG: return bytecaster.toBytes((Long) o);
+        
+            // The type conversion here is unchecked. 
+            // Relying on DataType.findType to do the right thing.
+        case DataType.MAP: return bytecaster.toBytes((Map<String, Object>) o);
+        
+        case DataType.NULL: return null;
+        case DataType.TUPLE: return bytecaster.toBytes((Tuple) o);
+        case DataType.ERROR: throw new IOException("Unable to determine type of " + o.getClass());
+        default: throw new IOException("Unable to find a converter for tuple field " + o);
+        }
     }
 }
