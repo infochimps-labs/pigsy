@@ -141,7 +141,7 @@ public class HFileStorage extends StoreFunc {
             for (int i = 0; i < column.size(); i++) {
                 if (!column.isNull(i)) {
                     byte[] columnName = Bytes.toBytes(columnNames[i]);
-                    byte[] value = Bytes.toBytes(column.get(i).toString()); // FIXME: Should convert from it's type properly
+                    byte[] value = objToBytes(column.get(i), DataType.findType(column.get(i)));
                     KeyValue kv = new KeyValue(rowKey, columnFamily, columnName, ts, value);
                     map.add(kv.clone());                    
                 }
