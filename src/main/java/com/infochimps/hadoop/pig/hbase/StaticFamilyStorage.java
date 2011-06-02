@@ -373,6 +373,7 @@ public class StaticFamilyStorage extends LoadFunc implements StoreFuncInterface,
                     tuple.set(0, new DataByteArray(rowKey.get()));
                     startIndex++;
                 }
+                
                 for (int i = 0;i < columnInfo_.size(); ++i){
                     int currentIndex = startIndex + i;
 
@@ -404,12 +405,12 @@ public class StaticFamilyStorage extends LoadFunc implements StoreFuncInterface,
                         }
                         tuple.set(currentIndex, bagged_family);
                     } else {
-                        // It's a column so set the value                        
+                        // It's a column so set the value                      
                         if (result.containsColumn(columnInfo.getColumnFamily(), columnInfo.getColumnName())) {
                             byte[] cell=result.getValue(columnInfo.getColumnFamily(),
                                                         columnInfo.getColumnName());
                             DataByteArray value =
-                                cell == null ? new DataByteArray(ONE) : new DataByteArray(cell);
+                                (cell == null || cell.length == 0) ? new DataByteArray(ONE) : new DataByteArray(cell);
                             tuple.set(currentIndex, value);                            
                         } else {
                             tuple.set(currentIndex, null);
@@ -422,7 +423,6 @@ public class StaticFamilyStorage extends LoadFunc implements StoreFuncInterface,
                         LOG.debug("tuple value:" + tuple.get(i));
                     }
                 }
-
                 return tuple;
             }
         } catch (InterruptedException e) {
