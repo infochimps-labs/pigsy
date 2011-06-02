@@ -134,6 +134,7 @@ public class StaticFamilyStorage extends LoadFunc implements StoreFuncInterface,
     private final static String CASTER_PROPERTY = "pig.hbase.caster";
     private final static String ASTERISK = "*";
     private final static String COLON = ":";
+    private final static String ONE = "1";
     
     private List<ColumnInfo> columnInfo_ = Lists.newArrayList();
     private HTable m_table;
@@ -403,12 +404,16 @@ public class StaticFamilyStorage extends LoadFunc implements StoreFuncInterface,
                         }
                         tuple.set(currentIndex, bagged_family);
                     } else {
-                        // It's a column so set the value
-                        byte[] cell=result.getValue(columnInfo.getColumnFamily(),
-                                                    columnInfo.getColumnName());
-                        DataByteArray value =
-                                cell == null ? null : new DataByteArray(cell);
-                        tuple.set(currentIndex, value);
+                        // It's a column so set the value                        
+                        if (result.containsColumn(columnInfo.getColumnFamily(), columnInfo.getColumnName())) {
+                            byte[] cell=result.getValue(columnInfo.getColumnFamily(),
+                                                        columnInfo.getColumnName());
+                            DataByteArray value =
+                                cell == null ? new DataByteArray(ONE) : new DataByteArray(cell);
+                            tuple.set(currentIndex, value);                            
+                        } else {
+                            tuple.set(currentIndex, null);
+                        }
                     }
                 }
 
