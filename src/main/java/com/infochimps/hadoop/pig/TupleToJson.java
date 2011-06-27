@@ -47,18 +47,15 @@ public class TupleToJson extends EvalFunc<String> {
         String [] fieldNames = fieldString.split(DELIM);
         
         StringBuffer jsonBuf = new StringBuffer();
-        jsonBuf.append("{\"");
+        jsonBuf.append("{");
         for(int i = 0; i < input.size(); i++) {
             try {
-                
-                if( i != 0 && i != input.size()-1) {
-		    jsonBuf.append(",");
-		}
-                
+                                                
                 byte type = DataType.findType(input.get(i));
                 switch (type) {
                     case DataType.BYTEARRAY:
                     case DataType.CHARARRAY:
+			jsonBuf.append("\"");
                         jsonBuf.append(fieldNames[i]);
                         jsonBuf.append("\":\"");
                         jsonBuf.append(input.get(i));
@@ -68,6 +65,7 @@ public class TupleToJson extends EvalFunc<String> {
                     case DataType.FLOAT:
                     case DataType.INTEGER:
                     case DataType.LONG:
+			jsonBuf.append("\"");
                         jsonBuf.append(fieldNames[i]);
                         jsonBuf.append("\":");
                         jsonBuf.append(input.get(i));
@@ -75,6 +73,9 @@ public class TupleToJson extends EvalFunc<String> {
                     case DataType.NULL:
                         if (input.size()==1) return null;
                         break;
+                }
+		if( i != input.size()-1 ) {
+                    jsonBuf.append(",");
                 }
 
             } catch (Exception e) {
