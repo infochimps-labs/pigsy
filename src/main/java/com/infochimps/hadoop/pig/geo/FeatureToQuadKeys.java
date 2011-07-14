@@ -24,8 +24,6 @@ public class FeatureToQuadKeys extends EvalFunc<DataBag> {
 
     private static TupleFactory tupleFactory = TupleFactory.getInstance();
     private static BagFactory   bagFactory = BagFactory.getInstance();
-
-    private static int MAX_KEYS = 500000;
     private static final String GEOM_POINT = "Point";
     
     // Simple factory for creating geoJSON features from json strings
@@ -61,15 +59,10 @@ public class FeatureToQuadKeys extends EvalFunc<DataBag> {
             // If the object is a simple point then act on it immediately and without further adeau
             if (jts.getGeometryType().equals(GEOM_POINT)) {
                 Point point   = (Point) jts;
-                Tuple geocell = tupleFactory.newTuple(QuadKeyUtils.compute(point.getX(), point.getY(), resolution));
+                Tuple geocell = tupleFactory.newTuple(QuadKeyUtils.geoPointToQuadKey(point.getX(), point.getY(), resolution));
                 returnCells.add(geocell);
-            } else { // Otherwise check that it's not going to produce too many cells
-                int approxCellCount = QuadKeyUtils.cellCount(jts.getEnvelopeInternal(), resolution);
-                if (approxCellCount > MAX_KEYS) {
-                    return returnCells;
-                }
-                // Finally, compute all the cells for the polygon
-                returnCells = GeoCellUtils.allCellsFor(jts, resolution);
+            } else {
+                returnCells = QuadKeyUtils.allCellsFor(jts, resolution);
             }
         } catch (JSONException e) {}
         return returnCells;
