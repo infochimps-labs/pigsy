@@ -57,9 +57,6 @@ public final class QuadKeyUtils {
             }
         }
 
-        //
-        System.out.println(serializeBagOfQuadkeys(returnKeys));
-        //
         return returnKeys;
     }
 
