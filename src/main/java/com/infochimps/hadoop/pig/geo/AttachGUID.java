@@ -49,19 +49,21 @@ public class AttachGUID extends EvalFunc<String> {
         String qualifier = input.get(0).toString();
         String id_field = input.get(1).toString();
         String json = input.get(2).toString();
-        String result = null;
-        
+        String resultId = null;
+        GeoFeature resultFeature = null;
         try {
             MfGeo decoded = reader.decode(json);
             GeoFeature feature = (GeoFeature)decoded;
             Object domainId = feature.getProperties().get(id_field);
             if (domainId!=null) {
-                result = constructGUID(qualifier, domainId.toString());
+                resultId = constructGUID(qualifier, domainId.toString());
             } else {
-                result = constructGUID(qualifier, json);
+                resultId = constructGUID(qualifier, json);
             }
+            resultFeature = new GeoFeature(resultId, feature.getMfGeometry(), feature.getProperties());            
         } catch (JSONException e) {}
-        return result;
+        
+        return resultFeature.serialize();
     }
 
     private String constructGUID(String qualifier, String domainId) {
