@@ -20,9 +20,8 @@ import org.apache.pig.data.BagFactory;
 import org.apache.pig.data.DataBag;
 import org.apache.pig.backend.executionengine.ExecException;
 
-import com.vividsolutions.jts.geom.Polygon;
-import com.vividsolutions.jts.geom.Geometry;
-import com.vividsolutions.jts.geom.Point;
+import com.vividsolutions.jts.geom.*;
+import com.vividsolutions.jts.algorithm.CentroidPoint;
 
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -53,6 +52,7 @@ public class SummarizeTile extends EvalFunc<HashMap<String,DataBag>> {
             }
         };
 
+    private static final GeometryFactory geomFactory = new GeometryFactory();
     private final MfGeoJSONReader reader = new MfGeoJSONReader(mfFactory);
     
     public HashMap exec(Tuple input) throws IOException {
@@ -144,16 +144,20 @@ public class SummarizeTile extends EvalFunc<HashMap<String,DataBag>> {
         return newCenters;
     }
 
-    // private HashMap<String, Double> computeCentroids(HashMap<String, List<GeoFeature>> centers) {
-    //     HashMap<String, Double> centroids = new HashMap<String, Double>();
-    //     for (Map.Entry<String,List<GeoFeature>> entry : centers.entrySet()) {
-    //         List<GeoFeature> points = (List<GeoFeature>)entry.getValue();
-    //         
-    //     }
-    //     return centroids;
-    // }
-    // 
-    // private Double
+    private HashMap<String, Point> computeCentroids(HashMap<String, List<GeoFeature>> centers) {
+        HashMap<String, Point> centroids = new HashMap<String, Point>();
+        for (Map.Entry<String,List<GeoFeature>> entry : centers.entrySet()) {
+            List<GeoFeature> points = (List<GeoFeature>)entry.getValue();
+            CentroidPoint c = new CentroidPoint();
+            for (GeoFeature point : points) {
+                Point geoPoint = (Point)point.getMfGeometry().getInternalGeometry();
+                c.add(geoPoint);
+            }
+            Point p = geomFactory.createPoint(c.getCentroid());
+            centroids.put(entry.getKey().toString(), p);
+        }
+        return centroids;
+    }
     
     /**
        Needs to create new GeoFeatures by summarizing the ones attached to each center
