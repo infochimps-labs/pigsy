@@ -60,7 +60,7 @@ public class DispatchPoints extends EvalFunc<DataBag> {
             } else {/* I regret to inform you, but this only works with points. */}
         } catch (JSONException e) {}
         // DEBUG
-        System.out.println(QuadKeyUtils.serializeBagOfQuadkeys(returnKeys));
+        // System.out.println(QuadKeyUtils.serializeBagOfQuadkeys(returnKeys));
         //
         return returnKeys;
     }
