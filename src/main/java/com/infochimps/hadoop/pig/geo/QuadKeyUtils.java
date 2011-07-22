@@ -173,6 +173,18 @@ public final class QuadKeyUtils {
         return "";
     }
 
+    public static List<String> childrenContaining(Geometry g, String parent) {        
+        List<String> children = childrenFor(parent);
+        List<String> returnChildren = new ArrayList<String>();        
+        for (String child : children) {
+            Polygon quadKeyBox = quadKeyToBox(child);
+            if (quadKeyBox.intersects(g)) {
+                returnChildren.add(child);
+            }
+        }
+        return returnChildren;
+    }
+
     /**
      * Determines the map width and height (in pixels) at a specified level of detail.
      * 
