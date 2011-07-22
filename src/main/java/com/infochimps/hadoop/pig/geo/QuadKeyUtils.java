@@ -219,6 +219,49 @@ public final class QuadKeyUtils {
         int[] tileXY = pixelXYToTileXY(pixelXY[0], pixelXY[1]);
         return tileXYToQuadKey(tileXY[0], tileXY[1], levelOfDetail);
     }
+
+    /**
+       Returns a list of the quadkey for a given (lng,lat,zoom) tuple as well as all the neighboring tiles.
+     */
+    public static List<String> quadKeyAndNeighbors(double longitude, double latitude, final int levelOfDetail) {
+        int[] pixelXY = geoPointToPixelXY(longitude, latitude, levelOfDetail);
+        int[] tileXY = pixelXYToTileXY(pixelXY[0], pixelXY[1]);
+
+        List<String> result = new ArrayList<String>(9);
+        result.add(tileXYToQuadKey(tileXY[0], tileXY[1], levelOfDetail));
+        
+        int maxXY = maxTileAtZoom(levelOfDetail);
+        int x = ((tileXY[0]+1) > maxXY) ? 0 : tileXY[0]+1;
+        int y = tileXY[1];
+        result.add(tileXYToQuadKey(x, y, levelOfDetail));
+
+        x = ((tileXY[0]-1) < 0) ? maxXY : tileXY[0]-1;
+        result.add(tileXYToQuadKey(x, y, levelOfDetail));
+
+        x = tileXY[0];
+        y = ((tileXY[1]+1) > maxXY) ? 0 : tileXY[1]+1;
+        result.add(tileXYToQuadKey(x, y, levelOfDetail));
+
+        y = ((tileXY[1]-1) < 0) ? maxXY : tileXY[1]-1;
+        result.add(tileXYToQuadKey(x, y, levelOfDetail));
+
+        x = ((tileXY[0]+1) > maxXY) ? 0 : tileXY[0]+1;
+        y = ((tileXY[1]+1) > maxXY) ? 0 : tileXY[1]+1;
+        result.add(tileXYToQuadKey(x, y, levelOfDetail));
+
+        x = ((tileXY[0]-1) < 0) ? maxXY : tileXY[0]-1;
+        y = ((tileXY[1]-1) < 0) ? maxXY : tileXY[1]-1;
+        result.add(tileXYToQuadKey(x, y, levelOfDetail));
+
+        y = ((tileXY[1]+1) > maxXY) ? 0 : tileXY[1]+1;
+        result.add(tileXYToQuadKey(x, y, levelOfDetail));
+
+        x = ((tileXY[0]+1) > maxXY) ? 0 : tileXY[0]+1;
+        y = ((tileXY[1]-1) < 0) ? maxXY : tileXY[1]-1;
+        result.add(tileXYToQuadKey(x, y, levelOfDetail));
+            
+        return result;
+    }
     
     /**
      * Converts a point from latitude/longitude WGS-84 coordinates (in degrees) into pixel XY
