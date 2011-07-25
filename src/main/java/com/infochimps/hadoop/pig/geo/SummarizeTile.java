@@ -63,8 +63,9 @@ public class SummarizeTile extends EvalFunc<HashMap<String,DataBag>> {
     private static final String CLUSTERS = "clusters";
     private static final String POINTS = "points";
 
-    // The key to use in the geoJSON serialization of a cluster. Indicates the number of points used.
+    // The keys to use in the geoJSON serialization of a cluster. Indicates the number of points used.
     private static final String CLUSTER_KEY = "num_points";
+    private static final String INSIDE_TILE = "inside_tile";
     
     // Simple factory for creating geoJSON features from json strings
     private final MfGeoFactory mfFactory = new MfGeoFactory() {
@@ -86,15 +87,18 @@ public class SummarizeTile extends EvalFunc<HashMap<String,DataBag>> {
         Integer numCenters = (Integer)input.get(0);
         String quadKey = input.get(1).toString();
         DataBag points = (DataBag)input.get(2);
+
+        Polygon space = QuadKeyUtils.quadKeyToBox(quadKey); // Get the tile as a geometry object
         
         if (points.size() < MAX_POINTS_PER_TILE) { // if there aren't enough points, don't cluster
             // FIXME: Need to return only points that are actually inside the tile.
-            // Use pointsWithin(space, points)
-            bags.put(POINTS, points);
+            List<GeoFeature> pointsDeserialized = bagToList(points);
+            List<GeoFeature> inside = pointsWithin(space, pointsDeserialized);
+            bags.put(POINTS, listToBag(inside));
             return bags;
         } else {
         
-            Polygon space = QuadKeyUtils.quadKeyToBox(quadKey); // Get the tile as a geometry object
+            
             
             List<GeoFeature> pointList = bagToList(points);
             List<GeoFeature> kCenters = getKCenters(space, pointList, numCenters);
@@ -104,8 +108,9 @@ public class SummarizeTile extends EvalFunc<HashMap<String,DataBag>> {
             // FIXME: Make sure we only return points inside the tile
             //
             if (kCenters.size() < numCenters) {
-                // Use pointsWithin(space, points)
-                bags.put(POINTS, points);
+                List<GeoFeature> pointsDeserialized = bagToList(points);
+                List<GeoFeature> inside = pointsWithin(space, pointsDeserialized);
+                bags.put(POINTS, listToBag(inside));
                 return bags;
             }
             //
@@ -168,14 +173,16 @@ public class SummarizeTile extends EvalFunc<HashMap<String,DataBag>> {
                 if (similarity(currentCenters, newCenters) >= 0.99) break;
 
                 // Update K centers to be centroids
-                kCenters = computeCentroids(newCenters);
+                kCenters = computeCentroids(space, newCenters);
 
                 // copy new centers to current centers
                 currentCenters = (HashMap<String, List<GeoFeature>>)newCenters.clone();
                 currentCenters.putAll(newCenters);
             }
 
-            bags.put(CLUSTERS, listToBag(kCenters));
+            // FIXME: Only return clusters that have at least one point inside the tile
+            List<GeoFeature> finalCenters = filterCentersByInsideTile(kCenters);
+            bags.put(CLUSTERS, listToBag(finalCenters));
             return bags;
         }
     }
@@ -198,10 +205,10 @@ public class SummarizeTile extends EvalFunc<HashMap<String,DataBag>> {
         return pointList;
     }
 
-    private DataBag listToBag(List<GeoFeature> centers) {
+    private DataBag listToBag(List<GeoFeature> features) {
         DataBag bag = bagFactory.newDefaultBag();
-        for (GeoFeature center : centers) {
-            bag.add(tupleFactory.newTuple(center.serialize()));
+        for (GeoFeature feature : features) {
+            bag.add(tupleFactory.newTuple(feature.serialize()));
         }
         return bag;
     }
@@ -226,7 +233,7 @@ public class SummarizeTile extends EvalFunc<HashMap<String,DataBag>> {
        this method returns K points randomly selected from the subset of points that are inside the space.
      */
     private List<GeoFeature> getKCenters(Polygon space, List<GeoFeature> points, Integer k) throws ExecException {
-        List<GeoFeature> kCenters = pointsWithin(space, points);
+        List<GeoFeature> kCenters = new ArrayList<GeoFeature>(points);
         Collections.shuffle(kCenters);
         kCenters = kCenters.subList(0, Math.min(k.intValue(), kCenters.size()));
         return kCenters;
@@ -247,24 +254,39 @@ public class SummarizeTile extends EvalFunc<HashMap<String,DataBag>> {
         return newCenters;
     }
 
+    private List<GeoFeature> filterCentersByInsideTile(List<GeoFeature> centers) {
+        List<GeoFeature> result = new ArrayList<GeoFeature>();
+        for (GeoFeature center : centers) {
+            try {
+                if (center.getProperties().get(INSIDE_TILE) != null) {
+                    result.add(center);
+                }
+            } catch (JSONException e) {/* whoops */};
+        }
+        return result;
+    }
+    
     /**
        Given a HashMap that maps {center_id => [list_of_points]} will return a new list
        of centers by taking the centroid of all the points for a given center.
 
        FIXME: Some amount of summarization has to take place here. What is that exactly?
      */
-    private List<GeoFeature> computeCentroids(HashMap<String, List<GeoFeature>> centers) {
+    private List<GeoFeature> computeCentroids(Polygon space, HashMap<String, List<GeoFeature>> centers) {
         List<GeoFeature> centroids = new ArrayList<GeoFeature>(centers.size());
         for (Map.Entry<String,List<GeoFeature>> entry : centers.entrySet()) {
             List<GeoFeature> points = (List<GeoFeature>)entry.getValue();
+            JSONObject metaData = new JSONObject();
             CentroidPoint c = new CentroidPoint();
             for (GeoFeature point : points) {
                 Point geoPoint = (Point)point.getMfGeometry().getInternalGeometry();
+                try {
+                    if (space.contains(geoPoint)) metaData.put(INSIDE_TILE, true);
+                } catch (JSONException e) {/* whoops */}
                 c.add(geoPoint);
             }
             Point jtsP = geomFactory.createPoint(c.getCentroid());
             MfGeometry mfP = new MfGeometry(jtsP);
-            JSONObject metaData = new JSONObject();
             try {
                 metaData.put(CLUSTER_KEY, points.size());
             } catch (JSONException e) {/* whoops */}
