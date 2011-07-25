@@ -22,6 +22,27 @@ import com.vividsolutions.jts.geom.Point;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+/**
+   
+   This is very similar to FeatureToQuadkeys in that it takes arbitrary geoJSON
+   point object and generates a set of google quadkeys for that geometry at a
+   given resolution. The key difference here being that this:
+   <p>
+   a) Only works for points
+   b) Generates the quadkeys of the tiles that the point maps to directly _as well as_
+      that of the tile's 8 neighboring tiles.
+  <p>
+  What this means is that we can incorporate this UDF in a clustering workflow and
+  account for the points that fall near the edges of tiles.
+  <p>
+  Arguments:
+  <ul>
+  <li><b>resolution</b>: An integer resolution [1-23] specifying the zoom level to get
+  quadkeys for.</li>
+  <li><b>geoJSON</b>: An arbitrary geoJSON 'Point' object.</li>
+  </ul>
+  
+ */
 public class DispatchPoints extends EvalFunc<DataBag> {
     private static TupleFactory tupleFactory = TupleFactory.getInstance();
     private static BagFactory   bagFactory = BagFactory.getInstance();
@@ -49,19 +70,16 @@ public class DispatchPoints extends EvalFunc<DataBag> {
             MfGeometry geom = feature.getMfGeometry();
             Geometry jts = geom.getInternalGeometry();
 
+            // Be sure to only operate on points, fuck you otherwise
             if (jts.getGeometryType().equals(GEOM_POINT)) {
                 // There had better be 9 of them
                 List<String> keyAndNeighbors = QuadKeyUtils.quadKeyAndNeighbors(((Point)jts).getX(), ((Point)jts).getY(), resolution);
                 for (String quadKey : keyAndNeighbors) {
-                    System.out.println();
                     Tuple newQuadKey = tupleFactory.newTuple(quadKey);
                     returnKeys.add(newQuadKey);
                 }
             } else {/* I regret to inform you, but this only works with points. */}
         } catch (JSONException e) {}
-        // DEBUG
-        // System.out.println(QuadKeyUtils.serializeBagOfQuadkeys(returnKeys));
-        //
         return returnKeys;
     }
 }
