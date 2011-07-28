@@ -24,7 +24,7 @@ import org.json.JSONObject;
 
 /**
    
-   Given a qualifier (namespace + '.' + data asset name), a domain id field name (eg. 'geoname_id')
+   Given a qualifier (namespace + '.' + protocol + '.' + layer), a domain id field name (eg. 'geoname_id')
    and a geoJSON entity, generates a guid for it. To do this the method parses the geoJSON, pulls out
    the value of the named id field from the properties HashMap and concatenates the qualifier and the
    domain id. If there is no domain id use a '-1'.
