@@ -140,14 +140,23 @@ public final class QuadKeyUtils {
 
         int[] tileXY = quadKeyToTileXY(quadKey);
         int[] pixelXYMin = tileXYToPixelXY(tileXY[0], tileXY[1]);
-        int[] pixelXYMax = {pixelXYMin[0] + 255, pixelXYMin[1] + 255};
+        int[] pixelXYMax = {pixelXYMin[0] + 256, pixelXYMin[1] + 256};
 
         //convert to latitude and longitude coordinates
-        double west = pixelXYMin[0]*360.0/(256.0*Math.pow(2.0,quadKey.length())) - 180.0; 
-        double north = Math.asin((Math.exp((0.5 - pixelXYMin[1] / 256.0 / Math.pow(2.0,quadKey.length())) * 4 * Math.PI) - 1) / (Math.exp((0.5 - pixelXYMin[1] / 256.0 / Math.pow(2.0,quadKey.length())) * 4 * Math.PI) + 1)) * 180 / Math.PI;
+        int levelOfDetail = quadKey.length();
+        double mapsize = mapSize(levelOfDetail);
+        
+        double xmin = (clip(pixelXYMin[0], 0, mapsize - 1) / mapsize) - 0.5;
+        double ymin = 0.5 - (clip(pixelXYMin[1], 0, mapsize - 1) / mapsize);
 
-        double east = pixelXYMax[0]*360.0/(256.0*Math.pow(2.0,quadKey.length())) - 180.0;
-        double south = Math.asin((Math.exp((0.5 - pixelXYMax[1] / 256.0 / Math.pow(2.0,quadKey.length())) * 4 * Math.PI) - 1) / (Math.exp((0.5 - pixelXYMax[1] / 256.0 / Math.pow(2.0,quadKey.length())) * 4 * Math.PI) + 1)) * 180 / Math.PI;
+        double north = 90 - 360 * Math.atan(Math.exp(-ymin * 2 * Math.PI)) / Math.PI;
+        double west = 360 * xmin;
+
+        double xmax = (clip(pixelXYMax[0], 0, mapsize - 1) / mapsize) - 0.5;
+        double ymax = 0.5 - (clip(pixelXYMax[1], 0, mapsize - 1) / mapsize);
+
+        double south = 90 - 360 * Math.atan(Math.exp(-ymax * 2 * Math.PI)) / Math.PI;
+        double east = 360 * xmax;
 
         Coordinate nw = new Coordinate(west, north);
         Coordinate ne = new Coordinate(east, north);
