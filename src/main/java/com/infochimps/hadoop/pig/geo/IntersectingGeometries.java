@@ -66,7 +66,7 @@ public final class IntersectingGeometries extends EvalFunc<DataBag> {
                             GeoFeature featureY = (GeoFeature)reader.decode(jsonY);
                             MfGeometry mfGeomY = featureY.getMfGeometry();
                             Geometry geometryY = mfGeomY.getInternalGeometry();
-                            if (geometryY.overlaps(geometryX)) {
+                            if (geometryY.intersects(geometryX)) {
                                 Tuple out = tupleFactory.newTuple(2);
                                 out.set(0, featureX.getFeatureId());
                                 out.set(1, featureY.getFeatureId());

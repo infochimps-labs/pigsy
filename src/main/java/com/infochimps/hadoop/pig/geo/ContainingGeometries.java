@@ -44,6 +44,9 @@ public final class ContainingGeometries extends EvalFunc<DataBag> {
         };
     
     private final MfGeoJSONReader reader = new MfGeoJSONReader(mfFactory);
+
+    private final String INSIDE_KEY = "inside";
+    private final String INTERSECT_KEY = "intersects";
     
     public DataBag exec(Tuple input) throws IOException {
         if (input == null || input.size() < 2 || input.isNull(0) || input.isNull(1))
@@ -56,8 +59,10 @@ public final class ContainingGeometries extends EvalFunc<DataBag> {
             if (!x.isNull(0)) {
                 String jsonX = x.get(0).toString();
                 
-                // This will hold a list of the ids that this geometry is inside
+                // This will hold a list of the ids that this geometry is inside                
                 List<String> insideList = new ArrayList<String>();
+                // This will hold a list of the ids that this geometry is overlapped by
+                List<String> intersectsList = new ArrayList<String>();
                 
                 try {
                     MfGeo resultX = reader.decode(jsonX);
@@ -71,12 +76,18 @@ public final class ContainingGeometries extends EvalFunc<DataBag> {
                             GeoFeature featureY = (GeoFeature)resultY;
                             MfGeometry mfGeomY = featureY.getMfGeometry();
                             Geometry geometryY = mfGeomY.getInternalGeometry();
-                            if (geometryY.contains(geometryX)) {
-                                insideList.add(featureY.getProperties().get("NAME").toString());
+                            if (geometryY.intersects(geometryX)) {
+                                intersectsList.add(featureY.getFeatureId());
+                                if (geometryY.contains(geometryX)) {
+                                    insideList.add(featureY.getFeatureId());
+                                }
                             }
                         }
                     }
-                    GeoFeature newFeatureX = new GeoFeature(featureX.getFeatureId(), mfGeomX, featureX.getProperties().put("inside", insideList));
+                    JSONObject properties = featureX.getProperties();
+                    if (insideList.size() > 0) properties.put(INSIDE_KEY, insideList);
+                    if (intersectsList.size() > 0) properties.put(INTERSECT_KEY, intersectsList); 
+                    GeoFeature newFeatureX = new GeoFeature(featureX.getFeatureId(), mfGeomX, properties);
                     returnBag.add(tupleFactory.newTuple(newFeatureX.serialize()));
                     
                 } catch (JSONException e) {}
