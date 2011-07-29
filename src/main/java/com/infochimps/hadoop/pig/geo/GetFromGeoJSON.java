@@ -53,8 +53,12 @@ public class GetFromGeoJSON extends EvalFunc<String> {
                 result = feature.getFeatureId();
             } else if (fieldString.equals(GEOJSON_TYPE)) {
                 result = GEOJSON_FEATURE;
-            } else if (fieldString.equals(GEOJSON_GEOM)) {
-                result = feature.getMfGeometry().toString();
+            } else if (fieldString.startsWith(GEOJSON_GEOM)) {
+                if (fieldString.endsWith(GEOJSON_TYPE)) {
+                    result = feature.getMfGeometry().getInternalGeometry().getGeometryType();
+                } else {
+                    result = feature.getMfGeometry().getInternalGeometry().toText();
+                }                
             } else if (fieldString.startsWith(GEOJSON_PROP)){
                 String[] nestedFields = fieldString.split(PERIOD);
                 if (nestedFields.length > 1) {
