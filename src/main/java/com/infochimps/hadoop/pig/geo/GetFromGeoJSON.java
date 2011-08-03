@@ -66,7 +66,7 @@ public class GetFromGeoJSON extends EvalFunc<String> {
                     for (int i = 2; i < nestedFields.length; i++) {
                         value = ((HashMap<String, Object>)value).get(nestedFields[i]);
                     }
-                    result = value.toString();
+                    result = (value != null ? value.toString() : null);
                 }                
             } 
 

@@ -91,7 +91,6 @@ public class SummarizeTile extends EvalFunc<HashMap<String,DataBag>> {
         Polygon space = QuadKeyUtils.quadKeyToBox(quadKey); // Get the tile as a geometry object
         
         if (points.size() < MAX_POINTS_PER_TILE) { // if there aren't enough points, don't cluster
-            // FIXME: Need to return only points that are actually inside the tile.
             List<GeoFeature> pointsDeserialized = bagToList(points);
             List<GeoFeature> inside = pointsWithin(space, pointsDeserialized);
             bags.put(POINTS, listToBag(inside));
@@ -105,7 +104,6 @@ public class SummarizeTile extends EvalFunc<HashMap<String,DataBag>> {
 
             //
             // Whoops, still not enough points for clustering
-            // FIXME: Make sure we only return points inside the tile
             //
             if (kCenters.size() < numCenters) {
                 List<GeoFeature> pointsDeserialized = bagToList(points);
@@ -231,11 +229,16 @@ public class SummarizeTile extends EvalFunc<HashMap<String,DataBag>> {
     /**
        Given the geometry representing a tile, a list of points, and some number of centers to return (K),
        this method returns K points randomly selected from the subset of points that are inside the space.
+       Importantly, this is where cluster ids are assigned.
      */
     private List<GeoFeature> getKCenters(Polygon space, List<GeoFeature> points, Integer k) throws ExecException {
         List<GeoFeature> kCenters = new ArrayList<GeoFeature>(points);
         Collections.shuffle(kCenters);
         kCenters = kCenters.subList(0, Math.min(k.intValue(), kCenters.size()));
+        for (int i = 0; i < kCenters.size(); i++) {
+            GeoFeature f = kCenters.get(i);
+            kCenters.set(i, new GeoFeature(Integer.toString(i), f.getMfGeometry(), f.getProperties()));
+        }
         return kCenters;
     }
 
@@ -259,6 +262,7 @@ public class SummarizeTile extends EvalFunc<HashMap<String,DataBag>> {
         for (GeoFeature center : centers) {
             try {
                 if (center.getProperties().get(INSIDE_TILE) != null) {
+                    center.getProperties().remove(INSIDE_TILE);
                     result.add(center);
                 }
             } catch (JSONException e) {/* whoops */};

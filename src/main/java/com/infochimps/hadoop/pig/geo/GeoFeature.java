@@ -35,7 +35,6 @@ public class GeoFeature extends MfFeature {
         return stringer.toString();
     }
 
-
     public String getFeatureId() {
         return id;
     }
@@ -48,7 +47,9 @@ public class GeoFeature extends MfFeature {
         Object result = null;
         try {
             result = properties.get(key);
-        } catch (JSONException e) {}
+        } catch (JSONException e) {
+            e.printStackTrace();
+        }
         return result;
     }
 
