@@ -35,6 +35,33 @@ public class GeoFeature extends MfFeature {
         return stringer.toString();
     }
 
+    // If this looks disgusting to you, thats because it is.
+    public String toIcssThing() {
+        JSONStringer stringer   = new JSONStringer();
+        MfGeoJSONWriter builder = new MfGeoJSONWriter(stringer);
+        try {
+            stringer.object();
+            toJSON(stringer);
+            if (getFeatureId() != null) {
+                // Add md5id
+                stringer.key("md5id").value(getFeatureId());
+            }
+
+            // add weird 'geo_geometry_type' key
+            stringer.key("geo_geometry_type");
+            stringer.value(geometry.getInternalGeometry().getGeometryType());
+            
+            // Add coordinates
+            builder.encodeGeometryCoordinates(geometry.getInternalGeometry());
+            
+            stringer.endObject();
+        } catch (Exception e) {
+            e.printStackTrace();
+            return null;
+        }
+        return stringer.toString();
+    }
+    
     public String getFeatureId() {
         return id;
     }
