@@ -50,7 +50,9 @@ public class GeoJSONToThing extends EvalFunc<String> {
         try {
             GeoFeature feature = (GeoFeature)reader.decode(json);
             result = feature.toIcssThing();
-        } catch (JSONException e) {}
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
         return result;
     }
 }

@@ -58,7 +58,7 @@ public class SummarizeTile extends EvalFunc<HashMap<String,DataBag>> {
     private static BagFactory   bagFactory = BagFactory.getInstance();
 
     // The maximum number of points to allow a tile to have before clusters are generated
-    private static final Long MAX_POINTS_PER_TILE = 75l;
+    private static final int MAX_POINTS_PER_TILE = 75;
     
     private static final String CLUSTERS = "clusters";
     private static final String POINTS = "points";
@@ -89,25 +89,23 @@ public class SummarizeTile extends EvalFunc<HashMap<String,DataBag>> {
         DataBag points = (DataBag)input.get(2);
 
         Polygon space = QuadKeyUtils.quadKeyToBox(quadKey); // Get the tile as a geometry object
+
+        List<GeoFeature> pointList = bagToList(points); // we need to read the whole bag into memory to do anything interesting
+        // points.clear(); // we don't need the bag anymore, clear it
         
-        if (points.size() < MAX_POINTS_PER_TILE) { // if there aren't enough points, don't cluster
-            List<GeoFeature> pointsDeserialized = bagToList(points);
-            List<GeoFeature> inside = pointsWithin(space, pointsDeserialized);
+        if (pointList.size() < MAX_POINTS_PER_TILE) { // if there aren't enough points, don't cluster
+            List<GeoFeature> inside = pointsWithin(space, pointList);
             bags.put(POINTS, listToBag(inside));
             return bags;
         } else {
         
-            
-            
-            List<GeoFeature> pointList = bagToList(points);
             List<GeoFeature> kCenters = getKCenters(space, pointList, numCenters);
 
             //
             // Whoops, still not enough points for clustering
             //
             if (kCenters.size() < numCenters) {
-                List<GeoFeature> pointsDeserialized = bagToList(points);
-                List<GeoFeature> inside = pointsWithin(space, pointsDeserialized);
+                List<GeoFeature> inside = pointsWithin(space, pointList);
                 bags.put(POINTS, listToBag(inside));
                 return bags;
             }
@@ -120,6 +118,7 @@ public class SummarizeTile extends EvalFunc<HashMap<String,DataBag>> {
 
             // Create a HashMap that maps {center_id => [list of points]}
             HashMap<String, List<GeoFeature>> currentCenters = initNewCenters(kCenters);
+            HashMap<String, List<GeoFeature>> newCenters = initNewCenters(kCenters);
             
             //
             // Iterate _at most_ 100 times for k-means
@@ -131,7 +130,8 @@ public class SummarizeTile extends EvalFunc<HashMap<String,DataBag>> {
                 String firstCenterId = firstCenter.getFeatureId();
                 Point firstCenterPoint = (Point)firstCenter.getMfGeometry().getInternalGeometry();
 
-                HashMap<String, List<GeoFeature>> newCenters = initNewCenters(kCenters);
+                // Generate a hashmap to contain centers again
+                newCenters = initNewCenters(kCenters);
                 
                 for (GeoFeature point : pointList) {
                     Point geoPoint = (Point)point.getMfGeometry().getInternalGeometry();
