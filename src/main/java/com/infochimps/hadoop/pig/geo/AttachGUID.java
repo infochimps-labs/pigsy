@@ -47,7 +47,7 @@ public class AttachGUID extends EvalFunc<String> {
             return null;
 
         String qualifier = input.get(0).toString();
-        String id_field = input.get(1).toString();
+        String id_field = input.get(1).toString(); // if this is -1, then the records are assumed to have no domain id. The full json of the object itself is used.
         String json = input.get(2).toString();
         String resultId = null;
         GeoFeature resultFeature = null;

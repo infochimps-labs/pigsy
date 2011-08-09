@@ -7,6 +7,8 @@ import java.util.Map;
 import java.util.HashMap;
 import java.util.Collections;
 
+import org.apache.commons.codec.digest.DigestUtils;
+
 import org.mapfish.geo.MfGeo;
 import org.mapfish.geo.MfGeoFactory;
 import org.mapfish.geo.MfGeoJSONReader;
@@ -37,6 +39,7 @@ import org.json.JSONObject;
    Arguments:
    <ul>
    <li><b>numCenters</b>: The number of centers (K) to use for K-means clustering</li>
+   <li><b>qualifier</b>: The namespace + '.' + protocol + '.' + type that qualifies the input points
    <li><b>quadkey</b>: A google quadkey representing a tile.</li>
    <li><b>bag_of_points</b>: A bag of geoJSON points containing the set of points that map to the tile
    specified by the quadkey given _as well as_ the neigboring tiles.
@@ -52,7 +55,7 @@ import org.json.JSONObject;
    </ul>
       
  */
-public class SummarizeTile extends EvalFunc<HashMap<String,DataBag>> {
+public class SummarizeTile extends EvalFunc<DataBag> {
 
     private static TupleFactory tupleFactory = TupleFactory.getInstance();
     private static BagFactory   bagFactory = BagFactory.getInstance();
@@ -63,9 +66,16 @@ public class SummarizeTile extends EvalFunc<HashMap<String,DataBag>> {
     private static final String CLUSTERS = "clusters";
     private static final String POINTS = "points";
 
+    private final String COLON = ":";
+    private final String PERIOD = ".";
+    private final String CHARSET = "UTF-8";
+    
     // The keys to use in the geoJSON serialization of a cluster. Indicates the number of points used.
-    private static final String CLUSTER_KEY = "num_points";
+    private static final String CLUSTER_KEY = "total";
+    private static final String CHILDREN_KEY = "children";
     private static final String INSIDE_TILE = "inside_tile";
+    private static final String TYPE_KEY = "_type";
+    private static final String CLUSTER_TYPE = "cluster_point";
     
     // Simple factory for creating geoJSON features from json strings
     private final MfGeoFactory mfFactory = new MfGeoFactory() {
@@ -77,37 +87,36 @@ public class SummarizeTile extends EvalFunc<HashMap<String,DataBag>> {
     private static final GeometryFactory geomFactory = new GeometryFactory();
     private final MfGeoJSONReader reader = new MfGeoJSONReader(mfFactory);
     
-    public HashMap exec(Tuple input) throws IOException {
-        if (input == null || input.size() < 3)
+    public DataBag exec(Tuple input) throws IOException {
+        if (input == null || input.size() < 4)
             return null;
 
-        HashMap<String,DataBag> bags = new HashMap<String,DataBag>(); // Result
+        DataBag result = bagFactory.newDefaultBag(); // Result
 
         // Get arguments from the input tuple
         Integer numCenters = (Integer)input.get(0);
-        String quadKey = input.get(1).toString();
-        DataBag points = (DataBag)input.get(2);
+        String qualifier = input.get(1).toString();         // namespace.protocol.type
+        String quadKey = input.get(2).toString();
+        DataBag points = (DataBag)input.get(3);
 
         Polygon space = QuadKeyUtils.quadKeyToBox(quadKey); // Get the tile as a geometry object
 
         List<GeoFeature> pointList = bagToList(points); // we need to read the whole bag into memory to do anything interesting
-        // points.clear(); // we don't need the bag anymore, clear it
+        points.clear();                                 // ! very important, we don't need the bag anymore, so clear it and freem memory
         
         if (pointList.size() < MAX_POINTS_PER_TILE) { // if there aren't enough points, don't cluster
             List<GeoFeature> inside = pointsWithin(space, pointList);
-            bags.put(POINTS, listToBag(inside));
-            return bags;
+            result = listToBag(inside);
         } else {
         
-            List<GeoFeature> kCenters = getKCenters(space, pointList, numCenters);
+            List<GeoFeature> kCenters = getKCenters(qualifier, quadKey, pointList, numCenters);
 
             //
             // Whoops, still not enough points for clustering
             //
             if (kCenters.size() < numCenters) {
                 List<GeoFeature> inside = pointsWithin(space, pointList);
-                bags.put(POINTS, listToBag(inside));
-                return bags;
+                result = listToBag(inside);
             }
             //
             
@@ -119,6 +128,8 @@ public class SummarizeTile extends EvalFunc<HashMap<String,DataBag>> {
             // Create a HashMap that maps {center_id => [list of points]}
             HashMap<String, List<GeoFeature>> currentCenters = initNewCenters(kCenters);
             HashMap<String, List<GeoFeature>> newCenters = initNewCenters(kCenters);
+
+            double sim = similarity(currentCenters, newCenters);
             
             //
             // Iterate _at most_ 100 times for k-means
@@ -138,8 +149,13 @@ public class SummarizeTile extends EvalFunc<HashMap<String,DataBag>> {
                     double distance = geoPoint.distance(firstCenterPoint);
                     String centerId = firstCenterId;
 
+                    reporter.progress("Iteration ["+i+"], convergence ["+sim+"]");
+                    
                     // Find nearest center
                     for (GeoFeature center : kCenters) {
+                        
+                        reporter.progress("Iteration ["+i+"], convergence ["+sim+"]");
+                        
                         Point centerPoint = (Point)center.getMfGeometry().getInternalGeometry();
                         double distanceToCenter = geoPoint.distance(centerPoint);
                         if (distanceToCenter < distance) {
@@ -167,8 +183,15 @@ public class SummarizeTile extends EvalFunc<HashMap<String,DataBag>> {
                 // existing list of centers to determine whether or not convergence has happened.
                 //
 
+                sim = similarity(currentCenters, newCenters);
+                
+                //
+                // Report progress to Hadoop which iteration we're on
+                //
+                reporter.progress("Iteration ["+i+"], convergence ["+sim+"]");
+                //
                 // Break if the new centers are the same as the old centers
-                if (similarity(currentCenters, newCenters) >= 0.99) break;
+                if (sim >= 0.99) break;
 
                 // Update K centers to be centroids
                 kCenters = computeCentroids(space, newCenters);
@@ -180,9 +203,9 @@ public class SummarizeTile extends EvalFunc<HashMap<String,DataBag>> {
 
             // FIXME: Only return clusters that have at least one point inside the tile
             List<GeoFeature> finalCenters = filterCentersByInsideTile(kCenters);
-            bags.put(CLUSTERS, listToBag(finalCenters));
-            return bags;
+            result = listToBag(finalCenters);
         }
+        return result;
     }
 
     /**
@@ -216,7 +239,7 @@ public class SummarizeTile extends EvalFunc<HashMap<String,DataBag>> {
        only those points within the tile
      */
     private List<GeoFeature> pointsWithin(Polygon space, List<GeoFeature> points) {
-        List<GeoFeature> pointsInside = new ArrayList<GeoFeature>();
+        List<GeoFeature> pointsInside = new ArrayList<GeoFeature>(points.size());
         for (GeoFeature point : points) {
             Point geoPoint = (Point)point.getMfGeometry().getInternalGeometry();
             if (space.contains(geoPoint)) {
@@ -231,15 +254,31 @@ public class SummarizeTile extends EvalFunc<HashMap<String,DataBag>> {
        this method returns K points randomly selected from the subset of points that are inside the space.
        Importantly, this is where cluster ids are assigned.
      */
-    private List<GeoFeature> getKCenters(Polygon space, List<GeoFeature> points, Integer k) throws ExecException {
+    private List<GeoFeature> getKCenters(String qualifier, String quadkey, List<GeoFeature> points, Integer k) throws ExecException {
+        Polygon space = QuadKeyUtils.quadKeyToBox(quadkey);
         List<GeoFeature> kCenters = new ArrayList<GeoFeature>(points);
         Collections.shuffle(kCenters);
         kCenters = kCenters.subList(0, Math.min(k.intValue(), kCenters.size()));
         for (int i = 0; i < kCenters.size(); i++) {
             GeoFeature f = kCenters.get(i);
-            kCenters.set(i, new GeoFeature(Integer.toString(i), f.getMfGeometry(), f.getProperties()));
+            String featureId = constructCenterId(qualifier, quadkey, Integer.toString(i));
+            kCenters.set(i, new GeoFeature(featureId, f.getMfGeometry(), f.getProperties()));
         }
         return kCenters;
+    }
+
+    private String constructCenterId(String qualifier, String quadkey, String index) {
+        String result = null;
+        try {
+            StringBuffer buffer = new StringBuffer();
+            buffer.append(qualifier);
+            buffer.append(PERIOD);
+            buffer.append(quadkey);
+            buffer.append(COLON);
+            buffer.append(index);
+            result = DigestUtils.md5Hex(buffer.toString().getBytes(CHARSET));
+        } catch (Exception e) {}
+        return result;
     }
 
     /**
@@ -248,7 +287,7 @@ public class SummarizeTile extends EvalFunc<HashMap<String,DataBag>> {
        that belong to them.
      */
     private HashMap<String, List<GeoFeature>> initNewCenters(List<GeoFeature> currentCenters) {
-        HashMap<String, List<GeoFeature>> newCenters = new HashMap<String, List<GeoFeature>>();
+        HashMap<String, List<GeoFeature>> newCenters = new HashMap<String, List<GeoFeature>>(currentCenters.size());
         for (GeoFeature center : currentCenters) {
             List<GeoFeature> points = new ArrayList<GeoFeature>();
             points.add(center);
@@ -258,9 +297,10 @@ public class SummarizeTile extends EvalFunc<HashMap<String,DataBag>> {
     }
 
     private List<GeoFeature> filterCentersByInsideTile(List<GeoFeature> centers) {
-        List<GeoFeature> result = new ArrayList<GeoFeature>();
+        List<GeoFeature> result = new ArrayList<GeoFeature>(centers.size());
         for (GeoFeature center : centers) {
             try {
+                center.getProperties().put(TYPE_KEY, CLUSTER_TYPE);
                 if (center.getProperties().get(INSIDE_TILE) != null) {
                     center.getProperties().remove(INSIDE_TILE);
                     result.add(center);
@@ -278,11 +318,17 @@ public class SummarizeTile extends EvalFunc<HashMap<String,DataBag>> {
      */
     private List<GeoFeature> computeCentroids(Polygon space, HashMap<String, List<GeoFeature>> centers) {
         List<GeoFeature> centroids = new ArrayList<GeoFeature>(centers.size());
+
         for (Map.Entry<String,List<GeoFeature>> entry : centers.entrySet()) {
             List<GeoFeature> points = (List<GeoFeature>)entry.getValue();
+            List<String> children = new ArrayList<String>(points.size()); // will hold the children for a cluster
+            
             JSONObject metaData = new JSONObject();
             CentroidPoint c = new CentroidPoint();
             for (GeoFeature point : points) {
+
+                if (!point.getFeatureId().equals(entry.getKey().toString())) children.add(point.getFeatureId()); // add child id to the children array
+                
                 Point geoPoint = (Point)point.getMfGeometry().getInternalGeometry();
                 try {
                     if (space.contains(geoPoint)) metaData.put(INSIDE_TILE, true);
@@ -293,6 +339,7 @@ public class SummarizeTile extends EvalFunc<HashMap<String,DataBag>> {
             MfGeometry mfP = new MfGeometry(jtsP);
             try {
                 metaData.put(CLUSTER_KEY, points.size());
+                metaData.put(CHILDREN_KEY, children);
             } catch (JSONException e) {/* whoops */}
             GeoFeature featureP = new GeoFeature(entry.getKey().toString(), mfP, metaData);
             centroids.add(featureP);
