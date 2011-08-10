@@ -55,9 +55,9 @@ public class AttachGUID extends EvalFunc<String> {
         try {
             MfGeo decoded = reader.decode(json);
             GeoFeature feature = (GeoFeature)decoded;
-            Object domainId = feature.getProperties().get(id_field);
-            if (domainId!=null) {
-                resultId = constructGUID(qualifier, domainId.toString());
+            if (feature.getProperties().has(id_field)) {
+                String domainId = feature.getProperties().getString(id_field);
+                resultId = constructGUID(qualifier, domainId);
             } else {
                 resultId = constructGUID(qualifier, json);
             }
