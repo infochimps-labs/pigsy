@@ -71,7 +71,7 @@ public class SummarizeTile extends EvalFunc<DataBag> {
     private final String CHARSET = "UTF-8";
     
     // The keys to use in the geoJSON serialization of a cluster. Indicates the number of points used.
-    private static final String CLUSTER_KEY = "total";
+    private static final String CLUSTER_KEY = "_total";
     private static final String CHILDREN_KEY = "children";
     private static final String INSIDE_TILE = "inside_tile";
     private static final String TYPE_KEY = "_type";
@@ -99,36 +99,30 @@ public class SummarizeTile extends EvalFunc<DataBag> {
         String quadKey = input.get(2).toString();
         DataBag points = (DataBag)input.get(3);
 
-        Polygon space = QuadKeyUtils.quadKeyToBox(quadKey); // Get the tile as a geometry object
+        // Convert the tile quadkey into a bounding box object
+        Polygon space = QuadKeyUtils.quadKeyToBox(quadKey); 
 
-        List<GeoFeature> pointList = bagToList(points); // we need to read the whole bag into memory to do anything interesting
-        points.clear();                                 // ! very important, we don't need the bag anymore, so clear it and freem memory
-        
-        if (pointList.size() < MAX_POINTS_PER_TILE) { // if there aren't enough points, don't cluster
+        // Read ALL of the points into memory and clear the bag.
+        List<GeoFeature> pointList = bagToList(points); 
+        points.clear();                                 
+
+        // If there aren't enough points then don't bother clustering and only return points inside the tile
+        if (pointList.size() < MAX_POINTS_PER_TILE) { 
             List<GeoFeature> inside = pointsWithin(space, pointList);
             result = listToBag(inside);
         } else {
-        
+
+            // Get initial set of K centers
             List<GeoFeature> kCenters = getKCenters(qualifier, quadKey, pointList, numCenters);
 
-            //
-            // Whoops, still not enough points for clustering
-            //
-            if (kCenters.size() < numCenters) {
-                List<GeoFeature> inside = pointsWithin(space, pointList);
-                result = listToBag(inside);
-            }
-            //
-            
-            for (GeoFeature center : kCenters) {
-                // DO NOT include the centers in the calculation
-                pointList.remove(center);
-            }
+            // Remove the centers from the list of points to include in the calculation
+            for (GeoFeature center : kCenters) pointList.remove(center);
 
-            // Create a HashMap that maps {center_id => [list of points]}
+            // Create two hashmaps to hold center ids and the lists of points associated with them
             HashMap<String, List<GeoFeature>> currentCenters = initNewCenters(kCenters);
             HashMap<String, List<GeoFeature>> newCenters = initNewCenters(kCenters);
 
+            // Compute the similarity. This should be 1.0 at the beginning
             double sim = similarity(currentCenters, newCenters);
             
             //
@@ -141,21 +135,14 @@ public class SummarizeTile extends EvalFunc<DataBag> {
                 String firstCenterId = firstCenter.getFeatureId();
                 Point firstCenterPoint = (Point)firstCenter.getMfGeometry().getInternalGeometry();
 
-                // Generate a hashmap to contain centers again
-                newCenters = initNewCenters(kCenters);
-                
                 for (GeoFeature point : pointList) {
-                    Point geoPoint = (Point)point.getMfGeometry().getInternalGeometry();
-                    double distance = geoPoint.distance(firstCenterPoint);
-                    String centerId = firstCenterId;
-
-                    reporter.progress("Iteration ["+i+"], convergence ["+sim+"]");
                     
+                    Point geoPoint = (Point)point.getMfGeometry().getInternalGeometry();
+                    double distance = geoPoint.distance(firstCenterPoint); // compute distance to first center
+                    String centerId = firstCenterId;                       // associate 'point' with the first center
+
                     // Find nearest center
                     for (GeoFeature center : kCenters) {
-                        
-                        reporter.progress("Iteration ["+i+"], convergence ["+sim+"]");
-                        
                         Point centerPoint = (Point)center.getMfGeometry().getInternalGeometry();
                         double distanceToCenter = geoPoint.distance(centerPoint);
                         if (distanceToCenter < distance) {
@@ -177,28 +164,30 @@ public class SummarizeTile extends EvalFunc<DataBag> {
                     }
                 }
 
-                //
-                // Now, we have a giant hashmap of centers, need to calculate their centroids and
-                // create a new list of centers. This list of centers must then be compared to the
-                // existing list of centers to determine whether or not convergence has happened.
-                //
-
+                // Compute the similarity between the currentCenters and the latest newCenters
                 sim = similarity(currentCenters, newCenters);
                 
-                //
                 // Report progress to Hadoop which iteration we're on
-                //
                 reporter.progress("Iteration ["+i+"], convergence ["+sim+"]");
-                //
+                
                 // Break if the new centers are the same as the old centers
                 if (sim >= 0.99) break;
 
                 // Update K centers to be centroids
                 kCenters = computeCentroids(space, newCenters);
 
+
                 // copy new centers to current centers
                 currentCenters = (HashMap<String, List<GeoFeature>>)newCenters.clone();
                 currentCenters.putAll(newCenters);
+
+                // Nuke everything in the newCenters HashMap and start again
+                newCenters = initNewCenters(kCenters);
+
+                System.out.println("New centers:");
+                printCenters(newCenters);
+                System.out.println("Current centers:");
+                printCenters(currentCenters);
             }
 
             // FIXME: Only return clusters that have at least one point inside the tile
@@ -208,9 +197,71 @@ public class SummarizeTile extends EvalFunc<DataBag> {
         return result;
     }
 
+    private void printCenters(HashMap<String, List<GeoFeature>> centers) {
+        for (Map.Entry<String,List<GeoFeature>> entry : centers.entrySet()) {
+            System.out.println("Center ["+entry.getKey().toString()+"]");
+            List<GeoFeature> points = (List<GeoFeature>)entry.getValue();
+
+            
+            for (GeoFeature point : points) {
+                System.out.println("     child ["+point.serialize()+"]");
+            }
+
+            if (points.size()==1) {
+                System.out.println("     Centroid ["+points.get(0).serialize()+"]");
+            } else {
+                List<String> children = new ArrayList<String>(points.size()); // Will hold a center's children ids
+
+                // Add some metadata about the children to the center
+                JSONObject metaData = new JSONObject();
+
+                // Add all the points associated with a center to the 'CentroidPoint' object
+                int numPoints = 0;
+                CentroidPoint c = new CentroidPoint();
+                for (GeoFeature point : points) {
+                    try {
+                        // If the child point is a cluster itself, need to accumulate the number of points it has as well
+                        boolean isCluster = false;
+                        if ((point.getProperties().has(TYPE_KEY) && point.getProperties().getString(TYPE_KEY).equals(CLUSTER_TYPE)) || point.getProperties().has(CLUSTER_KEY)) isCluster = true;
+                    
+                        if (isCluster) {
+                            numPoints += point.getProperties().getInt(CLUSTER_KEY);
+                        }
+                        // add child id to the children array if it isn't the id of the parent
+                        if (!point.getFeatureId().equals(entry.getKey().toString())) children.add(point.getFeatureId()); 
+                
+                        Point geoPoint = (Point)point.getMfGeometry().getInternalGeometry();
+
+                        if (numPoints==0) numPoints = points.size();
+                    
+                        metaData.put(CLUSTER_KEY, numPoints);
+                        c.add(geoPoint);
+                    } catch (JSONException e) {
+                        e.printStackTrace();
+                    }
+                }
+
+                try {
+                    if (children.size() > 0) metaData.put(CHILDREN_KEY, children); // eg, {"children":['8u9qhjncna90ah', 'jfkah8034ri9z', ...]}
+                } catch (JSONException e) {
+                    e.printStackTrace();
+                }
+                        
+                // create a new point object from the centroid and add to the centroids list
+                Point jtsP = geomFactory.createPoint(c.getCentroid()); 
+                MfGeometry mfP = new MfGeometry(jtsP);
+                GeoFeature featureP = new GeoFeature(entry.getKey().toString(), mfP, metaData);
+
+                System.out.println("     Centroid ["+featureP.serialize()+"]");
+            }
+            System.out.println("---");
+        }
+    }
+    
     /**
-       Given a Pig DataBag which contains tuples with exactly one element, namely the de-serialized
-       geoJSON point entities, will return a List containing these same entities.
+       Given a DataBag containing serialized geoJSON points will return a List containing
+       the de-serialized representations of these points. The primary issue here, of course,
+       is that all the points must be read into memory.
      */
     private List<GeoFeature> bagToList(DataBag points) throws ExecException {
         List<GeoFeature> pointList = new ArrayList<GeoFeature>(((Long)points.size()).intValue());
@@ -220,12 +271,18 @@ public class SummarizeTile extends EvalFunc<DataBag> {
                 try {
                     GeoFeature poiFeature = (GeoFeature)reader.decode(jsonBlob);
                     pointList.add(poiFeature);
-                } catch (JSONException e) {}
+                } catch (JSONException e) {
+                    e.printStackTrace(); // gotcha
+                }
             } 
         }
         return pointList;
     }
 
+    /**
+       Basically just the opposite of bagToList. Takes a list of de-serialized geoJSON features
+       and creates a DataBag with the features serialized as geoJSON.
+     */
     private DataBag listToBag(List<GeoFeature> features) {
         DataBag bag = bagFactory.newDefaultBag();
         for (GeoFeature feature : features) {
@@ -250,23 +307,25 @@ public class SummarizeTile extends EvalFunc<DataBag> {
     }
     
     /**
-       Given the geometry representing a tile, a list of points, and some number of centers to return (K),
-       this method returns K points randomly selected from the subset of points that are inside the space.
-       Importantly, this is where cluster ids are assigned.
+       Gets K centers randomly from the passed in list of points, attaches md5ids to them, and returns the
+       list of centers.
      */
     private List<GeoFeature> getKCenters(String qualifier, String quadkey, List<GeoFeature> points, Integer k) throws ExecException {
-        Polygon space = QuadKeyUtils.quadKeyToBox(quadkey);
         List<GeoFeature> kCenters = new ArrayList<GeoFeature>(points);
-        Collections.shuffle(kCenters);
+        Collections.shuffle(kCenters); // so we can take K centers off the top
         kCenters = kCenters.subList(0, Math.min(k.intValue(), kCenters.size()));
         for (int i = 0; i < kCenters.size(); i++) {
             GeoFeature f = kCenters.get(i);
             String featureId = constructCenterId(qualifier, quadkey, Integer.toString(i));
-            kCenters.set(i, new GeoFeature(featureId, f.getMfGeometry(), f.getProperties()));
+            GeoFeature center = new GeoFeature(featureId, f.getMfGeometry(), f.getProperties());
+            kCenters.set(i, center);
         }
         return kCenters;
     }
 
+    /**
+       Uses the passed in qualifier, quadkey, and cluster index to generate a md5id for the cluster.
+     */
     private String constructCenterId(String qualifier, String quadkey, String index) {
         String result = null;
         try {
@@ -277,14 +336,28 @@ public class SummarizeTile extends EvalFunc<DataBag> {
             buffer.append(COLON);
             buffer.append(index);
             result = DigestUtils.md5Hex(buffer.toString().getBytes(CHARSET));
-        } catch (Exception e) {}
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
         return result;
     }
 
     /**
        Given a list of centers, as deserialized geoJSON entities (GeoFeatures), generates a
-       new HashMap that maps the ids of the centers to a list containing the GeoFeatures
-       that belong to them.
+       new HashMap that maps the ids of the centers to a list containing the points
+       that are associated with them.
+       <p>
+       The output will look something like:
+
+       {
+         'feauh879hana91ahzj' => ['feauh879hana91ahzj'],
+         '890uqnn18afjhanl0z' => ['890uqnn18afjhanl0z'],
+         ...
+       }
+
+       with the idea that the lists will be added to by the clustering algorithm itself.
+       
+       FIXME: This HashMap is going to eat a LOT of memory, how can this be ameliorated?
      */
     private HashMap<String, List<GeoFeature>> initNewCenters(List<GeoFeature> currentCenters) {
         HashMap<String, List<GeoFeature>> newCenters = new HashMap<String, List<GeoFeature>>(currentCenters.size());
@@ -296,76 +369,103 @@ public class SummarizeTile extends EvalFunc<DataBag> {
         return newCenters;
     }
 
+    /**
+       Called after after clustering is done. Only returns centers that have at least
+       one point inside the tile in question.
+     */
     private List<GeoFeature> filterCentersByInsideTile(List<GeoFeature> centers) {
         List<GeoFeature> result = new ArrayList<GeoFeature>(centers.size());
         for (GeoFeature center : centers) {
             try {
-                center.getProperties().put(TYPE_KEY, CLUSTER_TYPE);
-                if (center.getProperties().get(INSIDE_TILE) != null) {
-                    center.getProperties().remove(INSIDE_TILE);
-                    result.add(center);
+                if (center.getProperties().has(INSIDE_TILE)) {  // {"inside_tile":true} or not there
+                    JSONObject centerProperties = new JSONObject(center.getProperties(), JSONObject.getNames(center.getProperties()));
+                    centerProperties.remove(INSIDE_TILE);
+                    centerProperties.put(TYPE_KEY, CLUSTER_TYPE);
+                    GeoFeature finalCenter = new GeoFeature(center.getFeatureId(), center.getMfGeometry(), centerProperties);
+                    result.add(finalCenter);
                 }
-            } catch (JSONException e) {/* whoops */};
+            } catch (JSONException e) {
+                e.printStackTrace();
+            }
         }
         return result;
     }
     
     /**
        Given a HashMap that maps {center_id => [list_of_points]} will return a new list
-       of centers by taking the centroid of all the points for a given center.
+       of centers by taking the centroid of all the points for a given center. Ensures that
+       the clusters have attached to them information about whether or not they contain
+       at least one point inside the tile.
 
-       FIXME: Some amount of summarization has to take place here. What is that exactly?
+       FIXME: What a fucking mess. Some amount of summarization has to take place here. What is that exactly?
      */
     private List<GeoFeature> computeCentroids(Polygon space, HashMap<String, List<GeoFeature>> centers) {
+        
         List<GeoFeature> centroids = new ArrayList<GeoFeature>(centers.size());
 
         for (Map.Entry<String,List<GeoFeature>> entry : centers.entrySet()) {
-            List<GeoFeature> points = (List<GeoFeature>)entry.getValue();
-            List<String> children = new ArrayList<String>(points.size()); // will hold the children for a cluster
             
-            JSONObject metaData = new JSONObject();
-            CentroidPoint c = new CentroidPoint();
-            for (GeoFeature point : points) {
+            List<GeoFeature> points = (List<GeoFeature>)entry.getValue(); // Get the list of points associated with a center
 
-                if (!point.getFeatureId().equals(entry.getKey().toString())) children.add(point.getFeatureId()); // add child id to the children array
+            if (points.size()==1) {
+                centroids.add(points.get(0));
+            } else {
+                List<String> children = new ArrayList<String>(points.size()); // Will hold a center's children ids
+
+                // Add some metadata about the children to the center
+                JSONObject metaData = new JSONObject();
+            
+                // Add all the points associated with a center to the 'CentroidPoint' object
+                int numPoints = 0;
+                CentroidPoint c = new CentroidPoint();
+                for (GeoFeature point : points) {
+                    try {
+                        // If the child point is a cluster itself, need to accumulate the number of points it has as well
+                        boolean isCluster = false;
+                        if ((point.getProperties().has(TYPE_KEY) && point.getProperties().getString(TYPE_KEY).equals(CLUSTER_TYPE)) || point.getProperties().has(CLUSTER_KEY)) isCluster = true;
+                    
+                        if (isCluster) {
+                            numPoints += point.getProperties().getInt(CLUSTER_KEY);
+                        }
+                        // add child id to the children array if it isn't the id of the parent
+                        if (!point.getFeatureId().equals(entry.getKey().toString())) children.add(point.getFeatureId()); 
                 
-                Point geoPoint = (Point)point.getMfGeometry().getInternalGeometry();
+                        Point geoPoint = (Point)point.getMfGeometry().getInternalGeometry();
+
+                        if (space.contains(geoPoint)) metaData.put(INSIDE_TILE, true);
+                        if (numPoints==0) numPoints = points.size();
+                    
+                        metaData.put(CLUSTER_KEY, numPoints);
+                        c.add(geoPoint);
+                    } catch (JSONException e) {
+                        e.printStackTrace();
+                    }
+                }
+
                 try {
-                    if (space.contains(geoPoint)) metaData.put(INSIDE_TILE, true);
-                } catch (JSONException e) {/* whoops */}
-                c.add(geoPoint);
+                    if (children.size() > 0) metaData.put(CHILDREN_KEY, children); // eg, {"children":['8u9qhjncna90ah', 'jfkah8034ri9z', ...]}
+                } catch (JSONException e) {
+                    e.printStackTrace();
+                }
+
+                // create a new point object from the centroid and add to the centroids list
+                Point jtsP = geomFactory.createPoint(c.getCentroid()); 
+                MfGeometry mfP = new MfGeometry(jtsP);
+                GeoFeature featureP = new GeoFeature(entry.getKey().toString(), mfP, metaData);
+                centroids.add(featureP);
             }
-            Point jtsP = geomFactory.createPoint(c.getCentroid());
-            MfGeometry mfP = new MfGeometry(jtsP);
-            try {
-                metaData.put(CLUSTER_KEY, points.size());
-                metaData.put(CHILDREN_KEY, children);
-            } catch (JSONException e) {/* whoops */}
-            GeoFeature featureP = new GeoFeature(entry.getKey().toString(), mfP, metaData);
-            centroids.add(featureP);
         }
         return centroids;
-    }
-
-    /**
-       Given a List of GeoFeature objects, returns a HashMap containing {GeoFeature.id => GeoFeature}
-       for convenience.
-     */
-    private HashMap<String, GeoFeature> listToMap(List<GeoFeature> features) {
-        HashMap<String, GeoFeature> result = new HashMap<String, GeoFeature>(features.size());
-        for (GeoFeature feature : features) {
-            result.put(feature.getFeatureId(), feature);
-        }
-        return result;
     }
     
     /**
        Given a list of old centers and list of new centers, computes how much different
-       the new centers are from the old ones.
+       the new centers are from the old ones by examining the list of points each center is associated with.
        <p>
        <ul>
        <li>1. Compute jaccard similarity of two clusters with the same id</li>
        <li>2. Take the average of these similarities scores.</li>
+       </ul>
        Returns a number between 0 and 1. Closer to 1 means more similar.
      */
     private double similarity(HashMap<String, List<GeoFeature>> oldCenters, HashMap<String, List<GeoFeature>> newCenters) {
