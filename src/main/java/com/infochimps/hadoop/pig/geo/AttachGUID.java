@@ -50,6 +50,7 @@ public class AttachGUID extends EvalFunc<String> {
         String id_field = input.get(1).toString(); // if this is -1, then the records are assumed to have no domain id. The full json of the object itself is used.
         String json = input.get(2).toString();
         String resultId = null;
+        String result = null;
         GeoFeature resultFeature = null;
         try {
             MfGeo decoded = reader.decode(json);
@@ -60,10 +61,13 @@ public class AttachGUID extends EvalFunc<String> {
             } else {
                 resultId = constructGUID(qualifier, json);
             }
-            resultFeature = new GeoFeature(resultId, feature.getMfGeometry(), feature.getProperties());            
-        } catch (JSONException e) {}
+            resultFeature = new GeoFeature(resultId, feature.getMfGeometry(), feature.getProperties());
+            result = resultFeature.serialize();
+        } catch (JSONException e) {
+            e.printStackTrace();
+        }
         
-        return resultFeature.serialize();
+        return result;
     }
 
     private String constructGUID(String qualifier, String domainId) {
