@@ -485,8 +485,12 @@ public class SummarizeTile extends EvalFunc<DataBag> {
     private double jaccard(List<GeoFeature> listA, List<GeoFeature> listB) {
         List<String> listAIds = new ArrayList<String>(listA.size()); // :)
         List<String> listBIds = new ArrayList<String>(listB.size());
-        for (GeoFeature f : listA) listAIds.add(f.getFeatureId());
-        for (GeoFeature f : listB) listBIds.add(f.getFeatureId());
+        for (GeoFeature f : listA) {
+            if (f.getFeatureId()!=null) listAIds.add(f.getFeatureId());
+        }
+        for (GeoFeature f : listB) {
+            if (f.getFeatureId()!=null) listBIds.add(f.getFeatureId());
+        }
         
         if (listAIds == listBIds) return 1.0;
         Collections.sort(listAIds);
