@@ -3,7 +3,7 @@
 require 'java'
 
 here = File.dirname(__FILE__)
-Dir["#{here}/../**/*.jar", "/usr/lib/pig/**/*.jar"].each{|jar| require jar}
+Dir["#{here}/../**/*.jar", "/usr/lib/pig/*.jar"].each{|jar| require jar}
 
 java_import 'com.infochimps.hadoop.pig.geo.GeoFeature'
 java_import 'com.infochimps.hadoop.pig.geo.QuadKeyUtils'
