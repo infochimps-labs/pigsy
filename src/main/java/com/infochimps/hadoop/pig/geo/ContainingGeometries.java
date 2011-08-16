@@ -3,6 +3,8 @@ package com.infochimps.hadoop.pig.geo;
 import java.io.IOException;
 import java.util.List;
 import java.util.ArrayList;
+import java.util.Map;
+import java.util.HashMap;
 
 import org.apache.pig.EvalFunc;
 import org.apache.pig.data.Tuple;
@@ -54,6 +56,26 @@ public final class ContainingGeometries extends EvalFunc<DataBag> {
         DataBag b1 = (DataBag)input.get(0);
         DataBag b2 = (DataBag)input.get(1);
         DataBag returnBag = bagFactory.newDefaultBag();
+
+	// Precalculate the list of geometry objects for the second bag. We store it
+	// in a HashMap because we need both the geometry and the featureid. If there
+	// are duplicate featureids, only one of the associated geometries will be checked...
+	// If this turns out to be a problem, turn geomB2 into an ArrayList< Map.Entry<String,Geometry> >,
+	// or something similar and then iterate over the array instead of the hash.
+	HashMap< String, Geometry > geomB2 = new HashMap< String, Geometry >();
+	for(Tuple y : b2) {
+	    try {
+		if (!y.isNull(0)) {
+		    String jsonY = y.get(0).toString();
+		    MfGeo resultY = reader.decode(jsonY);
+		    GeoFeature featureY = (GeoFeature)resultY;
+		    MfGeometry mfGeomY = featureY.getMfGeometry();
+		    Geometry geometryY = mfGeomY.getInternalGeometry();
+		    geomB2.put( featureY.getFeatureId(), geometryY );
+		}
+	    }  catch (JSONException e) {}
+	}
+
         
         for (Tuple x : b1) {
             if (!x.isNull(0)) {
@@ -69,20 +91,19 @@ public final class ContainingGeometries extends EvalFunc<DataBag> {
                     GeoFeature featureX = (GeoFeature)resultX;
                     MfGeometry mfGeomX = featureX.getMfGeometry();
                     Geometry geometryX = mfGeomX.getInternalGeometry();
-                    for (Tuple y : b2)  {
-                        if (!y.isNull(0)) {
-                            String jsonY = y.get(0).toString();
-                            MfGeo resultY = reader.decode(jsonY);
-                            GeoFeature featureY = (GeoFeature)resultY;
-                            MfGeometry mfGeomY = featureY.getMfGeometry();
-                            Geometry geometryY = mfGeomY.getInternalGeometry();
-                            if (geometryY.intersects(geometryX)) {
-                                intersectsList.add(featureY.getFeatureId());
-                                if (geometryY.contains(geometryX)) {
-                                    insideList.add(featureY.getFeatureId());
-                                }
-                            }
-                        }
+
+		    // Iterate over the hash of b2 geometry objects to check for 
+		    // intersections.
+                    for (Map.Entry<String,Geometry> entry : geomB2.entrySet() )  {
+			String featureId = entry.getKey();
+			Geometry geometryY = entry.getValue();
+
+			if (geometryY.intersects(geometryX)) {
+			    intersectsList.add(featureId);
+			    if (geometryY.contains(geometryX)) {
+				insideList.add(featureId);
+			    }
+			}
                     }
                     JSONObject properties = featureX.getProperties();
                     if (insideList.size() > 0) properties.put(INSIDE_KEY, insideList);
