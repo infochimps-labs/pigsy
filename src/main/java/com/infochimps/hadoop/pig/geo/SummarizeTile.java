@@ -61,7 +61,7 @@ public class SummarizeTile extends EvalFunc<DataBag> {
     private static BagFactory   bagFactory = BagFactory.getInstance();
 
     // The maximum number of points to allow a tile to have before clusters are generated
-    private static final int MAX_POINTS_PER_TILE = 75;
+    private static final int MAX_POINTS_PER_TILE = 256;
     
     private static final String CLUSTERS = "clusters";
     private static final String POINTS = "points";
@@ -115,6 +115,10 @@ public class SummarizeTile extends EvalFunc<DataBag> {
             // Get initial set of K centers
             List<GeoFeature> kCenters = getKCenters(qualifier, quadKey, pointList, numCenters);
 
+            //
+            System.out.println(kCenters.size());
+            //
+            
             // Remove the centers from the list of points to include in the calculation
             for (GeoFeature center : kCenters) pointList.remove(center);
 
@@ -166,9 +170,13 @@ public class SummarizeTile extends EvalFunc<DataBag> {
 
                 // Compute the similarity between the currentCenters and the latest newCenters
                 sim = similarity(currentCenters, newCenters);
-                
                 // Report progress to Hadoop which iteration we're on
                 reporter.progress("Iteration ["+i+"], convergence ["+sim+"]");
+
+                // System.out.println("New centers:");
+                // printCenters(newCenters);
+                // System.out.println("Current centers:");
+                // printCenters(currentCenters);
                 
                 // Break if the new centers are the same as the old centers
                 if (sim >= 0.99) break;
@@ -183,11 +191,6 @@ public class SummarizeTile extends EvalFunc<DataBag> {
 
                 // Nuke everything in the newCenters HashMap and start again
                 newCenters = initNewCenters(kCenters);
-
-                System.out.println("New centers:");
-                printCenters(newCenters);
-                System.out.println("Current centers:");
-                printCenters(currentCenters);
             }
 
             // FIXME: Only return clusters that have at least one point inside the tile
@@ -309,6 +312,8 @@ public class SummarizeTile extends EvalFunc<DataBag> {
     /**
        Gets K centers randomly from the passed in list of points, attaches md5ids to them, and returns the
        list of centers.
+
+       FIXME: Should try to get existing centers if they're there
      */
     private List<GeoFeature> getKCenters(String qualifier, String quadkey, List<GeoFeature> points, Integer k) throws ExecException {
         List<GeoFeature> kCenters = new ArrayList<GeoFeature>(points);
@@ -485,6 +490,7 @@ public class SummarizeTile extends EvalFunc<DataBag> {
     private double jaccard(List<GeoFeature> listA, List<GeoFeature> listB) {
         List<String> listAIds = new ArrayList<String>(listA.size()); // :)
         List<String> listBIds = new ArrayList<String>(listB.size());
+
         for (GeoFeature f : listA) {
             if (f.getFeatureId()!=null) listAIds.add(f.getFeatureId());
         }
