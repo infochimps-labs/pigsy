@@ -71,13 +71,15 @@ public class TupleToJson extends EvalFunc<String> {
                         jsonBuf.append(input.get(i));
                         break;
                     case DataType.NULL:
-                      if (input.size()==1) {
+                      if (input.size()>1) {
                     	jsonBuf.append("\"");
                         jsonBuf.append(fieldNames[i]);
                         jsonBuf.append("\":");
                         jsonBuf.append("null");
+                      } else {
+                        return null;
                       }
-                        break;
+                      break;
                 }
 		if( i != input.size()-1 ) {
                     jsonBuf.append(",");
