@@ -39,6 +39,15 @@ public final class ContainingGeometries extends EvalFunc<DataBag> {
     private static TupleFactory tupleFactory = TupleFactory.getInstance();
     private static BagFactory   bagFactory = BagFactory.getInstance();
     
+    private final class Pair {
+	public String featureId;
+	public Geometry geometry;
+	public Pair( String f, Geometry g) {
+	    featureId = f;
+	    geometry = g;
+	}
+    }
+
     private final MfGeoFactory mfFactory = new MfGeoFactory() {
             public MfFeature createFeature(String id, MfGeometry geometry, JSONObject properties) {
                 return new GeoFeature(id, geometry, properties);
@@ -62,7 +71,7 @@ public final class ContainingGeometries extends EvalFunc<DataBag> {
 	// are duplicate featureids, only one of the associated geometries will be checked...
 	// If this turns out to be a problem, turn geomB2 into an ArrayList< Map.Entry<String,Geometry> >,
 	// or something similar and then iterate over the array instead of the hash.
-	HashMap< String, Geometry > geomB2 = new HashMap< String, Geometry >();
+	ArrayList<Pair> geomB2 = new ArrayList<Pair>();
 	for(Tuple y : b2) {
 	    try {
 		if (!y.isNull(0)) {
@@ -71,7 +80,7 @@ public final class ContainingGeometries extends EvalFunc<DataBag> {
 		    GeoFeature featureY = (GeoFeature)resultY;
 		    MfGeometry mfGeomY = featureY.getMfGeometry();
 		    Geometry geometryY = mfGeomY.getInternalGeometry();
-		    geomB2.put( featureY.getFeatureId(), geometryY );
+		    geomB2.add( new Pair(featureY.getFeatureId(), geometryY ) );
 		}
 	    }  catch (JSONException e) {}
 	}
@@ -94,9 +103,9 @@ public final class ContainingGeometries extends EvalFunc<DataBag> {
 
 		    // Iterate over the hash of b2 geometry objects to check for 
 		    // intersections.
-                    for (Map.Entry<String,Geometry> entry : geomB2.entrySet() )  {
-			String featureId = entry.getKey();
-			Geometry geometryY = entry.getValue();
+                    for (Pair p : geomB2 )  {
+			String featureId = p.featureId;
+			Geometry geometryY = p.geometry;
 
 			if (geometryY.intersects(geometryX)) {
 			    intersectsList.add(featureId);
