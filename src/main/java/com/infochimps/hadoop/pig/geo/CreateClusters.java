@@ -68,9 +68,9 @@ public final class CreateClusters extends EvalFunc<DataBag> {
 
     private static final HashMap<Integer, List<Integer>> zoomLevelMap = new HashMap<Integer, List<Integer>>() {
         {
-            put(1, Arrays.asList(1,2,3,4,5));
-            put(2, Arrays.asList(6,7,8,9,10));
-            put(3, Arrays.asList(11,12,13,14,15)); // the max here is the max zoom level at which clusters exist
+            put(1, Arrays.asList(1,2,3,4));
+            put(2, Arrays.asList(3,4,5,6));
+            put(3, Arrays.asList(5,6,7,8,9,10)); // the max here is the max zoom level at which clusters exist
         }
     };
     
