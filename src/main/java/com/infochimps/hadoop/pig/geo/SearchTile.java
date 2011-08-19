@@ -47,7 +47,7 @@ public class SearchTile extends EvalFunc<DataBag> {
     private final MfGeoJSONReader reader = new MfGeoJSONReader(mfFactory);
 
     public DataBag exec(Tuple input) throws IOException {
-        if (input == null || input.size() < 2)
+        if (input == null || input.size() < 2 || input.isNull(0) || input.isNull(1))
             return null;
 
         DataBag returnKeys = bagFactory.newDefaultBag();
