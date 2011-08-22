@@ -117,7 +117,10 @@ public final class CreateClusters extends EvalFunc<DataBag> {
             metaData.put(CLUSTER_KEY, pointBag.size());
             metaData.put(TYPE_KEY, CLUSTER_TYPE);
             metaData.put(CLUSTER_ID, domainId);
-            if (children.size() > 0) metaData.put(CHILDREN_KEY, children); // eg, {"children":['8u9qhjncna90ah', 'jfkah8034ri9z', ...]}
+            if (children.size() > 0) {
+                children = children.subList(0, Math.min(1000, children.size()));
+                metaData.put(CHILDREN_KEY, children); // eg, {"children":['8u9qhjncna90ah', 'jfkah8034ri9z', ...]}
+            }
         } catch (JSONException e) {
             e.printStackTrace();
         }
