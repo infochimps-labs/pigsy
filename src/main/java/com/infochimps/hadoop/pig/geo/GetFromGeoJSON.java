@@ -22,7 +22,8 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 /**
-   Given a geoJSON feature, returns the field specified.
+   Given a geoJSON feature, returns the field specified. Eg. 'properties._type' will return the '_type' field
+   from the 'properties' hash of the input geoJSON.
  */
 public class GetFromGeoJSON extends EvalFunc<String> {
     private final MfGeoFactory mfFactory = new MfGeoFactory() {
@@ -70,7 +71,9 @@ public class GetFromGeoJSON extends EvalFunc<String> {
                 }                
             } 
 
-        } catch (JSONException e) {}
+        } catch (JSONException e) {
+            e.printStackTrace();
+        }
         return result;
     }
 }
