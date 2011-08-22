@@ -59,17 +59,18 @@ public final class CreateClusters extends EvalFunc<DataBag> {
     private final String CHARSET = "UTF-8";
     
     // The keys to use in the geoJSON serialization of a cluster. Indicates the number of points used.
-    private static final String CLUSTER_KEY = "_total";
-    private static final String CHILDREN_KEY = "children";
+    private static final String CLUSTER_KEY = "total_count";
+    private static final String CHILDREN_KEY = "cluster_children";
     private static final String TYPE_KEY = "_type";
-    private static final String CLUSTER_TYPE = "cluster_point";
+    private static final String CLUSTER_TYPE = "st.cluster_point";
+    private static final String CLUSTER_ID = "cluster_point_id";
     private static final String UNDERSCORE = "_";
 
     private static final HashMap<Integer, List<Integer>> zoomLevelMap = new HashMap<Integer, List<Integer>>() {
         {
-            put(1, Arrays.asList(1,2,3,4,5));
-            put(2, Arrays.asList(6,7,8,9,10));
-            put(3, Arrays.asList(11,12,13,14,15)); // the max here is the max zoom level at which clusters exist
+            put(1, Arrays.asList(1,2,3,4));
+            put(2, Arrays.asList(3,4,5,6));
+            put(3, Arrays.asList(5,6,7,8,9,10)); // the max here is the max zoom level at which clusters exist
         }
     };
     
@@ -115,7 +116,11 @@ public final class CreateClusters extends EvalFunc<DataBag> {
         try {
             metaData.put(CLUSTER_KEY, pointBag.size());
             metaData.put(TYPE_KEY, CLUSTER_TYPE);
-            if (children.size() > 0) metaData.put(CHILDREN_KEY, children); // eg, {"children":['8u9qhjncna90ah', 'jfkah8034ri9z', ...]}
+            metaData.put(CLUSTER_ID, domainId);
+            if (children.size() > 0) {
+                children = children.subList(0, Math.min(1000, children.size()));
+                metaData.put(CHILDREN_KEY, children); // eg, {"children":['8u9qhjncna90ah', 'jfkah8034ri9z', ...]}
+            }
         } catch (JSONException e) {
             e.printStackTrace();
         }
