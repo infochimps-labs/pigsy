@@ -104,7 +104,7 @@ public final class CreateClusters extends EvalFunc<DataBag> {
             try {
                 String pointJson = pointTuple.get(0).toString();
                 GeoFeature pointFeature = (GeoFeature)reader.decode(pointJson);
-                children.add(pointFeature.getFeatureId());
+                // children.add(pointFeature.getFeatureId());
 
                 Point geoPoint = (Point)pointFeature.getMfGeometry().getInternalGeometry();
                 c.add(geoPoint);
