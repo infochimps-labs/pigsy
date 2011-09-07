@@ -461,7 +461,7 @@ public class StaticFamilyStorage extends LoadFunc implements StoreFuncInterface,
 
         HBaseConfiguration.addHbaseResources(m_conf);
         if (m_conf.get(HAS_BEEN_UPLOADED) == null) {
-            HadoopUtils.uploadLocalFile(new Path(LOCAL_SCHEME+hbaseConfig_), new Path(HBASE_CONFIG_HDFS_PATH), m_conf);
+            HadoopUtils.uploadLocalFileIfChanged(new Path(LOCAL_SCHEME+hbaseConfig_), new Path(HBASE_CONFIG_HDFS_PATH), m_conf);
             HadoopUtils.shipIfNotShipped(new Path(HBASE_CONFIG_HDFS_PATH), m_conf);
             m_conf.set(HAS_BEEN_UPLOADED, "true");
         }

@@ -17,6 +17,25 @@ public class HadoopUtils {
         fs.copyFromLocalFile(false, true, localsrc, hdfsdest);
     }
 
+    
+    /**
+       Upload a local file to the cluster, if it's newer or nonexistent
+     */
+    public static void uploadLocalFileIfChanged(Path localsrc, Path hdfsdest, Configuration conf) throws IOException {
+        FileSystem fs = FileSystem.get(conf);
+        l_stat = fs.getFileStatus(localsrc);
+        try {
+            h_stat = fs.getFileStatus(hdfsdest);
+            if ( l_stat.getModificationTime() > h_stat.getModificationTime() ) {
+                uploadLocalFile(localsrc, hdfsdest, conf);
+            }
+        }
+        catch (FileNotFoundException e) {
+            uploadLocalFile(localsrc, hdfsdest, conf);
+        }
+    }
+
+
     /**
        Fetches a file with the basename specified from the distributed cache. Returns null if no file is found
      */
