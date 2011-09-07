@@ -26,7 +26,7 @@ public class HadoopUtils {
        Upload a local file to the cluster, if it's newer or nonexistent
      */
     public static void uploadLocalFileIfChanged(Path localsrc, Path hdfsdest, Configuration conf) throws IOException {
-        long l_time = new File(localsrc.toString()).lastModified();
+        long l_time = new File(localsrc.toUri()).lastModified();
         try {
             long h_time = FileSystem.get(conf).getFileStatus(hdfsdest).getModificationTime();
             if ( l_time > h_time ) {
