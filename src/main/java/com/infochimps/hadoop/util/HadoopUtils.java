@@ -23,14 +23,14 @@ public class HadoopUtils {
      */
     public static void uploadLocalFileIfChanged(Path localsrc, Path hdfsdest, Configuration conf) throws IOException {
         FileSystem fs = FileSystem.get(conf);
-        l_stat = fs.getFileStatus(localsrc);
+        FileStatus l_stat = fs.getFileStatus(localsrc);
         try {
-            h_stat = fs.getFileStatus(hdfsdest);
+            FileStatus h_stat = fs.getFileStatus(hdfsdest);
             if ( l_stat.getModificationTime() > h_stat.getModificationTime() ) {
                 uploadLocalFile(localsrc, hdfsdest, conf);
             }
         }
-        catch (FileNotFoundException e) {
+        catch (Exception e) {
             uploadLocalFile(localsrc, hdfsdest, conf);
         }
     }
