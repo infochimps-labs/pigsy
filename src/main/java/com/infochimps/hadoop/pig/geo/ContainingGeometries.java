@@ -93,8 +93,8 @@ public final class ContainingGeometries extends EvalFunc<DataBag> {
                 // This will hold a list of the ids that this geometry is inside                
                 List<String> insideList = new ArrayList<String>();
                 // This will hold a list of the ids that this geometry is overlapped by
-                List<String> intersectsList = new ArrayList<String>();
-                
+                // List<String> intersectsList = new ArrayList<String>();
+                // Travis
                 try {
                     MfGeo resultX = reader.decode(jsonX);
                     GeoFeature featureX = (GeoFeature)resultX;
@@ -106,17 +106,23 @@ public final class ContainingGeometries extends EvalFunc<DataBag> {
                     for (Pair p : geomB2 )  {
 			String featureId = p.featureId;
 			Geometry geometryY = p.geometry;
-
-			if (geometryY.intersects(geometryX)) {
-			    intersectsList.add(featureId);
-			    if (geometryY.contains(geometryX)) {
-				insideList.add(featureId);
-			    }
+			
+			if (geometryY.contains(geometryX)) {
+			    insideList.add(featureId);
 			}
+
+			// if (geometryY.intersects(geometryX)) {
+			//     intersectsList.add(featureId);
+			//     if (geometryY.contains(geometryX)) {
+			// 	insideList.add(featureId);
+			//     }
+			// }
+			// Travis
                     }
                     JSONObject properties = featureX.getProperties();
                     if (insideList.size() > 0) properties.put(INSIDE_KEY, insideList);
-                    if (intersectsList.size() > 0) properties.put(INTERSECT_KEY, intersectsList); 
+                    // if (intersectsList.size() > 0) properties.put(INTERSECT_KEY, intersectsList); 
+		    // Travis
                     GeoFeature newFeatureX = new GeoFeature(featureX.getFeatureId(), mfGeomX, properties);
                     returnBag.add(tupleFactory.newTuple(newFeatureX.serialize()));
                     
