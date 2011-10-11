@@ -1,12 +1,8 @@
 package com.infochimps.hadoop.util;
 
-import java.io.File;
-
 import java.io.IOException;
-import java.io.FileNotFoundException;
 
 import org.apache.hadoop.fs.FileSystem;
-import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.filecache.DistributedCache;
@@ -20,24 +16,6 @@ public class HadoopUtils {
         FileSystem fs = FileSystem.get(conf);
         fs.copyFromLocalFile(false, true, localsrc, hdfsdest);
     }
-
-    
-    /**
-       Upload a local file to the cluster, if it's newer or nonexistent
-     */
-    public static void uploadLocalFileIfChanged(Path localsrc, Path hdfsdest, Configuration conf) throws IOException {
-        long l_time = new File(localsrc.toUri()).lastModified();
-        try {
-            long h_time = FileSystem.get(conf).getFileStatus(hdfsdest).getModificationTime();
-            if ( l_time > h_time ) {
-                uploadLocalFile(localsrc, hdfsdest, conf);
-            }
-        }
-        catch (FileNotFoundException e) {
-            uploadLocalFile(localsrc, hdfsdest, conf);
-        }
-    }
-
 
     /**
        Fetches a file with the basename specified from the distributed cache. Returns null if no file is found

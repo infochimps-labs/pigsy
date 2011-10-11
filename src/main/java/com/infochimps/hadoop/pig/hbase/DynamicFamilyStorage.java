@@ -234,7 +234,7 @@ public class DynamicFamilyStorage extends StoreFunc implements StoreFuncInterfac
         }
         m_conf = HBaseConfiguration.addHbaseResources(job.getConfiguration());
         if (m_conf.get(HAS_BEEN_UPLOADED) == null) {
-            HadoopUtils.uploadLocalFileIfChanged(new Path(LOCAL_SCHEME+hbaseConfig_), new Path(HBASE_CONFIG_HDFS_PATH), m_conf);
+            HadoopUtils.uploadLocalFile(new Path(LOCAL_SCHEME+hbaseConfig_), new Path(HBASE_CONFIG_HDFS_PATH), m_conf);
             HadoopUtils.shipIfNotShipped(new Path(HBASE_CONFIG_HDFS_PATH), m_conf);
             m_conf.set(HAS_BEEN_UPLOADED, "true");
         }
