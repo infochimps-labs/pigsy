@@ -15,48 +15,42 @@ import com.vividsolutions.jts.geom.*;
 
 public final class QuadKeyUtils {
 
-    private static final int TILE_SIZE = 256;
-    private static final double MIN_LATITUDE = -85.05112878;
-    private static final double MAX_LATITUDE = 85.05112878;
+    private static final int    TILE_SIZE     = 256;
+    private static final double MIN_LATITUDE  = -85.05112878;
+    private static final double MAX_LATITUDE  = 85.05112878;
     private static final double MIN_LONGITUDE = -180;
     private static final double MAX_LONGITUDE = 180;
 
-    public static final double EARTH_RADIUS = 6378137;
-    public static final double EARTH_CIRCUM = EARTH_RADIUS * 2.0 * Math.PI;
-    public static final double EARTH_HALF_CIRC = EARTH_CIRCUM / 2.0;
-    public static final double FULL_RESOLUTION = EARTH_CIRCUM / 256.0;
+    public static final double  EARTH_RADIUS    = 6378137;
+    public static final double  EARTH_CIRCUM    = EARTH_RADIUS * 2.0 * Math.PI;
+    public static final double  EARTH_HALF_CIRC = EARTH_CIRCUM / 2.0;
+    public static final double  FULL_RESOLUTION = EARTH_CIRCUM / 256.0;
     
-    private static final int MAX_ZOOM_LEVEL = 23;
-    private static final int MAX_CELLS = 500000;
-    private static final String GEOM_COLLEC = "GeometryCollection";
+    private static final int    MAX_ZOOM_LEVEL  = 23;
+    private static final int    MAX_CELLS       = 500000;
+    private static final String GEOM_COLLEC     = "GeometryCollection";
 
-    private static TupleFactory tupleFactory = TupleFactory.getInstance();
-    private static BagFactory bagFactory = BagFactory.getInstance();
+    private static TupleFactory tupleFactory    = TupleFactory.getInstance();
+    private static BagFactory   bagFactory      = BagFactory.getInstance();
     private static final GeometryFactory geomFactory = new GeometryFactory();
 
     /**
        Get all cells overlapping the given geometry at the specified zoom level.
      */
     public static DataBag allCellsFor(Geometry g, int maxDepth) {
-        String container = containingQuadKey(g, maxDepth);
-
+        String       container   = containingQuadKey(g, maxDepth);
         List<String> keysToCheck = childrenFor(container);
-
-        DataBag returnKeys = bagFactory.newDefaultBag();
+        DataBag      returnKeys  = bagFactory.newDefaultBag();
 
         for (String key : keysToCheck) {
             boolean fullySearched = checkQuadKey(key, returnKeys, g, maxDepth);
-
-            //
             // If there are ever too many cells, stop everything and return empty bag
-            //
             if (!fullySearched) {
                 System.out.println("Too many cells! ["+returnKeys.size()+"]");
                 returnKeys.clear();
                 return returnKeys;
             }
         }
-
         return returnKeys;
     }
 
@@ -91,13 +85,9 @@ public final class QuadKeyUtils {
     public static boolean checkQuadKey(String quadKey, DataBag returnKeys, Geometry g, int maxDepth) {
         // Compute bounding box for the cell
         Polygon keyBox = quadKeyToBox(quadKey);
-        
-        if (returnKeys.size() > MAX_CELLS) {
-            return false;
-        }
+        if (returnKeys.size() > MAX_CELLS) return false;
        
         if (keyBox.intersects(g)) {
-
             if (quadKey.length() >= maxDepth ) {
                 Tuple quadKeyTuple = tupleFactory.newTuple(quadKey);
                 returnKeys.add(quadKeyTuple);
@@ -127,7 +117,6 @@ public final class QuadKeyUtils {
         return children;
     }
 
-
     public static int maxTileAtZoom(int levelOfDetail) {
         Double maxTile = (Math.pow(2.0, levelOfDetail) - 1); 
         return maxTile.intValue();
@@ -137,35 +126,32 @@ public final class QuadKeyUtils {
        Computes the bounding box of a quadKey.
      */
     public static Polygon quadKeyToBox(String quadKey) {
-
-        int[] tileXY = quadKeyToTileXY(quadKey);
-        int[] pixelXYMin = tileXYToPixelXY(tileXY[0], tileXY[1]);
-        int[] pixelXYMax = {pixelXYMin[0] + 256, pixelXYMin[1] + 256};
+        int[]  tileXY     = quadKeyToTileXY(quadKey);
+        int[]  pixelXYMin = tileXYToPixelXY(tileXY[0], tileXY[1]);
+        int[]  pixelXYMax = {pixelXYMin[0] + 256, pixelXYMin[1] + 256};
 
         //convert to latitude and longitude coordinates
-        int levelOfDetail = quadKey.length();
-        double mapsize = mapSize(levelOfDetail);
+        int    levelOfDetail = quadKey.length();
+        double mapsize  = mapSize(levelOfDetail);
         
-        double xmin = (clip(pixelXYMin[0], 0, mapsize - 1) / mapsize) - 0.5;
-        double ymin = 0.5 - (clip(pixelXYMin[1], 0, mapsize - 1) / mapsize);
+        double xmin     = (clip(pixelXYMin[0], 0, mapsize - 1) / mapsize) - 0.5;
+        double xmax     = (clip(pixelXYMax[0], 0, mapsize - 1) / mapsize) - 0.5;
+        double ymin     = 0.5 - (clip(pixelXYMin[1], 0, mapsize - 1) / mapsize);
+        double ymax     = 0.5 - (clip(pixelXYMax[1], 0, mapsize - 1) / mapsize);
 
-        double north = 90 - 360 * Math.atan(Math.exp(-ymin * 2 * Math.PI)) / Math.PI;
-        double west = 360 * xmin;
-
-        double xmax = (clip(pixelXYMax[0], 0, mapsize - 1) / mapsize) - 0.5;
-        double ymax = 0.5 - (clip(pixelXYMax[1], 0, mapsize - 1) / mapsize);
-
-        double south = 90 - 360 * Math.atan(Math.exp(-ymax * 2 * Math.PI)) / Math.PI;
-        double east = 360 * xmax;
+        double north    = 90 - 360 * Math.atan(Math.exp(-ymin * 2 * Math.PI)) / Math.PI;
+        double south    = 90 - 360 * Math.atan(Math.exp(-ymax * 2 * Math.PI)) / Math.PI;
+        double west     = 360 * xmin;
+        double east     = 360 * xmax;
 
         Coordinate nw = new Coordinate(west, north);
         Coordinate ne = new Coordinate(east, north);
         Coordinate sw = new Coordinate(west, south);
-        Coordinate se = new Coordinate(east, south);    
+        Coordinate se = new Coordinate(east, south);
         Coordinate[] bboxCoordinates = {nw, ne, se, sw, nw};    
-        LinearRing bboxRing = geomFactory.createLinearRing(bboxCoordinates);
-        Polygon bbox_poly = geomFactory.createPolygon(bboxRing, null);
-        return bbox_poly;
+        LinearRing bboxRing  = geomFactory.createLinearRing(bboxCoordinates);
+        Polygon    bbox_poly = geomFactory.createPolygon(bboxRing, null);
+        return     bbox_poly;
     } 
  
     /**
@@ -175,7 +161,7 @@ public final class QuadKeyUtils {
     public static String containingQuadKey(Geometry g, int levelOfDetail) {
         Point centroid = g.getCentroid();
         for (int i = levelOfDetail; i > 0; i--) {
-            String quadKey = geoPointToQuadKey(centroid.getX(), centroid.getY(), i);
+            String  quadKey    = geoPointToQuadKey(centroid.getX(), centroid.getY(), i);
             Polygon quadKeyBox = quadKeyToBox(quadKey);
             if (quadKeyBox.contains(g)) return quadKey;
         }
@@ -201,11 +187,9 @@ public final class QuadKeyUtils {
      *            Level of detail, from 1 (lowest detail) to 23 (highest detail)
      * @return The map width and height in pixels
      */
-
     public static int mapSize(final int levelOfDetail) {
         return TILE_SIZE << levelOfDetail;
     }
-
     
     /**
      * Clips a number to the specified minimum and maximum values.
@@ -222,19 +206,18 @@ public final class QuadKeyUtils {
         return Math.min(Math.max(n, minValue), maxValue);
     }
 
-
     public static String geoPointToQuadKey(double longitude, double latitude, final int levelOfDetail) {
         int[] pixelXY = geoPointToPixelXY(longitude, latitude, levelOfDetail);
-        int[] tileXY = pixelXYToTileXY(pixelXY[0], pixelXY[1]);
+        int[] tileXY  = pixelXYToTileXY(pixelXY[0], pixelXY[1]);
         return tileXYToQuadKey(tileXY[0], tileXY[1], levelOfDetail);
     }
 
     /**
-       Returns a list of the quadkey for a given (lng,lat,zoom) tuple as well as all the neighboring tiles.
+     * Returns a list of the quadkey for a given (lng,lat,zoom) tuple as well as all the neighboring tiles.
      */
     public static List<String> quadKeyAndNeighbors(double longitude, double latitude, final int levelOfDetail) {
         int[] pixelXY = geoPointToPixelXY(longitude, latitude, levelOfDetail);
-        int[] tileXY = pixelXYToTileXY(pixelXY[0], pixelXY[1]);
+        int[] tileXY  = pixelXYToTileXY(pixelXY[0], pixelXY[1]);
 
         List<String> result = new ArrayList<String>(9);
         result.add(tileXYToQuadKey(tileXY[0], tileXY[1], levelOfDetail));
@@ -287,16 +270,16 @@ public final class QuadKeyUtils {
      * @return Output parameter receiving the X and Y coordinates in pixels
      */
     public static int[] geoPointToPixelXY(double longitude, double latitude, final int levelOfDetail) {
-        latitude = clip(latitude, MIN_LATITUDE, MAX_LATITUDE);
         longitude = clip(longitude, MIN_LONGITUDE, MAX_LONGITUDE);
+        latitude  = clip(latitude,  MIN_LATITUDE, MAX_LATITUDE);
 
-        final double x = (longitude + 180) / 360;
         final double sinLatitude = Math.sin(latitude * Math.PI / 180);
+        final double x = (longitude + 180) / 360;
         final double y = 0.5 - Math.log((1 + sinLatitude) / (1 - sinLatitude)) / (4 * Math.PI);
 
-        final int mapSize = mapSize(levelOfDetail);
-        int[] pixelXY = {(int) clip(x * mapSize + 0.5, 0, mapSize - 1), (int) clip(y * mapSize + 0.5, 0, mapSize - 1)};
-        return pixelXY;
+        final int    mapSize = mapSize(levelOfDetail);
+        int[]        pixelXY = {(int) clip(x * mapSize + 0.5, 0, mapSize - 1), (int) clip(y * mapSize + 0.5, 0, mapSize - 1)};
+        return       pixelXY;
     }
 
     /**
@@ -392,7 +375,6 @@ public final class QuadKeyUtils {
                 tileX |= mask;
                 tileY |= mask;
                 break;
-
             default:
                 throw new IllegalArgumentException("Invalid QuadKey digit sequence.");
             }
