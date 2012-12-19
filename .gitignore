@@ -45,3 +45,4 @@ doc
 /config/apeyeye.yaml
 /config/routes.rb
 /target
+pig*.log

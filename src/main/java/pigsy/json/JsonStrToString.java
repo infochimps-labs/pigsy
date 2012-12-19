@@ -14,7 +14,7 @@
  * the License.
  */
  
-package pigsy.pig.json;
+package pigsy.json;
 
 import java.io.IOException;
 //
